@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Breakwater</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; background: #0b0b0c; color: #e8e8e6; }
+h1 { font-weight: 500; }
+button { background: #7f77dd; color: #1a1a1c; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 0.9rem; }
+.stats { display: flex; gap: 1.5rem; margin: 1.5rem 0; flex-wrap: wrap; }
+.stat { background: #18181a; padding: 1rem 1.5rem; border-radius: 8px; }
+.stat .n { font-size: 1.6rem; font-weight: 500; }
+.stat .l { font-size: 0.8rem; color: #999; }
+table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2a2c; font-size: 0.85rem; }
+tr.escalated { color: #f0997b; }
+tr.auto_resolved { color: #5dcaa5; }
+</style>
+</head>
+<body>
+<h1>Breakwater</h1>
+<button onclick="runReconcile()">Run reconciliation</button>
+<div class="stats" id="stats"></div>
+<table>
+<thead><tr><th>Transaction</th><th>Break type</th><th>Severity</th><th>Status</th><th>Reasoning</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+
+<script>
+async function runReconcile() {
+  document.getElementById('rows').innerHTML = '<tr><td colspan="4">Running...</td></tr>';
+  await fetch('/reconcile', { method: 'POST' });
+  await refresh();
+}
+
+async function refresh() {
+  const stats = await (await fetch('/stats')).json();
+  renderStats(stats);
+  const breaks = await (await fetch('/breaks')).json();
+  renderBreaks(breaks);
+}
+
+function renderStats(s) {
+  const el = document.getElementById('stats');
+  if (!s || s.breaks_found === undefined) {
+    el.innerHTML = '<div class="stat"><div class="l">Click "Run reconciliation" to start</div></div>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="stat"><div class="n">${s.total_ledger}</div><div class="l">ledger records</div></div>
+    <div class="stat"><div class="n">${s.auto_matched}</div><div class="l">auto-matched</div></div>
+    <div class="stat"><div class="n">${s.breaks_found}</div><div class="l">breaks found</div></div>
+    <div class="stat"><div class="n">${s.auto_resolved}</div><div class="l">auto-resolved</div></div>
+    <div class="stat"><div class="n">${s.escalated}</div><div class="l">escalated</div></div>
+    <div class="stat"><div class="n">${Math.round((s.memory_hit_rate || 0) * 100)}%</div><div class="l">resolved from memory</div></div>
+  `;
+}
+
+function renderBreaks(breaks) {
+  const rows = document.getElementById('rows');
+  rows.innerHTML = '';
+  breaks.forEach(b => {
+    const status = b.resolution.status;
+    const tr = document.createElement('tr');
+    tr.className = status;
+    const src = b.investigation.source === 'pattern_memory' ? ' (memory)' : '';
+    tr.innerHTML = `<td>${b.transaction_id}</td><td>${b.investigation.break_type}</td><td>${b.investigation.severity || '-'}</td><td>${status}</td><td>${b.investigation.reasoning}${src}</td>`;
+    rows.appendChild(tr);
+  });
+}
+
+refresh();
+</script>
+</body>
+</html>
