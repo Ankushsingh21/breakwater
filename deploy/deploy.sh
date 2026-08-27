@@ -1,52 +1,34 @@
-"""Vertex AI wrapper. Automatically uses GCP IAM credentials in Cloud Run,
-so no API key is required. Falls back to a deterministic stub if project isn't set."""
-import json
-import os
+#!/usr/bin/env bash
+set -e
+PROJECT_ID=$(gcloud config get-value project)
+REGION="us-central1"
+SERVICE="breakwater"
 
-# Vertex AI uses 1.5-flash as the current fastest/cheapest model tier
-MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+# 1. Enable required APIs
+gcloud services enable run.googleapis.com pubsub.googleapis.com firestore.googleapis.com aiplatform.googleapis.com
 
-_client = None
-if PROJECT_ID:
-    try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel
-        # Initialize with the project and default region
-        vertexai.init(project=PROJECT_ID, location="us-central1")
-        _client = GenerativeModel(MODEL)
-        print(f"[gemini_client] Successfully initialized Vertex AI for {PROJECT_ID}")
-    except Exception as e:
-        print(f"[gemini_client] Vertex AI SDK unavailable, using fallback stub: {e}")
+# 2. Give the default compute service account access to Vertex AI (Gemini) and Datastore (Firestore)
+PROJECT_NUM=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+COMPUTE_SA="${PROJECT_NUM}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:${COMPUTE_SA}" --role="roles/aiplatform.user" || true
+gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:${COMPUTE_SA}" --role="roles/datastore.user" || true
 
-PROMPT_TEMPLATE = """You are a reconciliation investigator at a bank.
-Two transaction records disagree. Classify the break and explain why in one sentence.
+# 3. Build the container
+gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE
 
-Ledger record: {ledger}
-Processor record: {processor}
-Matcher flagged reason: {reason}
+# 4. Deploy to Cloud Run (Note: USE_LOCAL_STORE is false, activating Firestore)
+gcloud run deploy $SERVICE \
+  --image gcr.io/$PROJECT_ID/$SERVICE \
+  --region $REGION \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars USE_LOCAL_STORE=false,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-1.5-flash
 
-Respond with ONLY valid JSON in this exact shape:
-{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.0-1.0, "reasoning": "one sentence"}
-"""
+# 5. Wire up Pub/Sub
+gcloud pubsub topics create breakwater-trigger || true
+SERVICE_URL=$(gcloud run services describe $SERVICE --region $REGION --format 'value(status.url)')
+gcloud pubsub subscriptions create breakwater-sub \
+  --topic breakwater-trigger \
+  --push-endpoint="$SERVICE_URL/reconcile" || true
 
-def classify_break(ledger, processor, reason):
-    if _client is None:
-        return _fallback_classify(reason)
-    prompt = PROMPT_TEMPLATE.format(ledger=ledger, processor=processor, reason=reason)
-    try:
-        response = _client.generate_content(prompt)
-        text = response.text.strip().strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-        return json.loads(text)
-    except Exception as e:
-        print(f"[gemini_client] API call failed, using fallback: {e}")
-        return _fallback_classify(reason)
-
-def _fallback_classify(reason):
-    if reason == "amount_mismatch":
-        return {"break_type": "currency_rounding", "confidence": 0.6, "reasoning": "Amount differs by a small margin (fallback rule)."}
-    if reason == "timestamp_mismatch":
-        return {"break_type": "timing_diff", "confidence": 0.6, "reasoning": "Timestamps differ but amounts match (fallback rule)."}
-    return {"break_type": "unknown", "confidence": 0.3, "reasoning": "Fallback stub could not classify."}
+echo "Deployed successfully at: $SERVICE_URL"
