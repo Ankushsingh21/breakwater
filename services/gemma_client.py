@@ -1,7 +1,7 @@
 import os
 
-# Legitimate open-source Gemma model on Vertex AI
-GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma-2-9b-it")
+# Legitimate serverless Gemma 4 model via Vertex AI MaaS
+GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma-4-26b-a4b-it-maas")
 _PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 _client = None
