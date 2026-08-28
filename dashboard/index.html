@@ -1,75 +1,201 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Breakwater</title>
-<style>
-body { font-family: system-ui, sans-serif; margin: 2rem; background: #0b0b0c; color: #e8e8e6; }
-h1 { font-weight: 500; }
-button { background: #7f77dd; color: #1a1a1c; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 0.9rem; }
-.stats { display: flex; gap: 1.5rem; margin: 1.5rem 0; flex-wrap: wrap; }
-.stat { background: #18181a; padding: 1rem 1.5rem; border-radius: 8px; }
-.stat .n { font-size: 1.6rem; font-weight: 500; }
-.stat .l { font-size: 0.8rem; color: #999; }
-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2a2c; font-size: 0.85rem; }
-tr.escalated { color: #f0997b; }
-tr.auto_resolved { color: #5dcaa5; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Breakwater | AI Reconciliation</title>
+    <style>
+        :root {
+            --bg: #f8fafc; --surface: #ffffff; --border: #e2e8f0;
+            --text: #0f172a; --text-muted: #64748b;
+            --primary: #2563eb; --primary-hover: #1d4ed8;
+            --low: #22c55e; --medium: #f59e0b; --high: #ef4444;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding: 2rem; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .header h1 { font-size: 1.5rem; }
+        .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .btn:hover:not(:disabled) { background: var(--primary-hover); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .stat-title { color: var(--text-muted); font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-value { font-size: 2rem; font-weight: 700; margin-top: 0.5rem; }
+        
+        .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 1rem; border-bottom: 1px solid var(--border); }
+        th { background: #f1f5f9; font-weight: 600; color: var(--text-muted); font-size: 0.875rem; }
+        tr.main-row { cursor: pointer; transition: background 0.1s; }
+        tr.main-row:hover { background: #f8fafc; }
+        
+        .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+        .badge.severity-low { background: #dcfce7; color: #166534; }
+        .badge.severity-medium { background: #fef3c7; color: #92400e; }
+        .badge.severity-high { background: #fee2e2; color: #991b1b; }
+        
+        .badge.status-auto_resolved { background: #dcfce7; color: #166534; }
+        .badge.status-escalated { background: #fee2e2; color: #991b1b; }
+
+        .details-row { display: none; background: #f8fafc; }
+        .details-row.open { display: table-row; }
+        .details-content { padding: 1.5rem; }
+        .details-content h4 { margin-bottom: 0.5rem; font-size: 0.875rem; color: var(--primary); }
+        .details-content p { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5; }
+        
+        #live-indicator { display: none; align-items: center; gap: 0.5rem; color: var(--low); font-size: 0.875rem; font-weight: 600; }
+        .dot { width: 8px; height: 8px; background: var(--low); border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    </style>
 </head>
 <body>
-<h1>Breakwater</h1>
-<button onclick="runReconcile()">Run reconciliation</button>
-<div class="stats" id="stats"></div>
-<table>
-<thead><tr><th>Transaction</th><th>Break type</th><th>Severity</th><th>Status</th><th>Reasoning</th></tr></thead>
-<tbody id="rows"></tbody>
-</table>
 
-<script>
-async function runReconcile() {
-  document.getElementById('rows').innerHTML = '<tr><td colspan="4">Running...</td></tr>';
-  await fetch('/reconcile', { method: 'POST' });
-  await refresh();
-}
+    <div class="header">
+        <div>
+            <h1>Breakwater Dashboard</h1>
+            <div id="live-indicator"><div class="dot"></div>Live Polling Active</div>
+        </div>
+        <button id="run-btn" class="btn" onclick="triggerReconciliation()">Run Reconciliation</button>
+    </div>
 
-async function refresh() {
-  const stats = await (await fetch('/stats')).json();
-  renderStats(stats);
-  const breaks = await (await fetch('/breaks')).json();
-  renderBreaks(breaks);
-}
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-title">Auto-Matched</div>
+            <div class="stat-value" id="stat-matched">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Breaks Detected</div>
+            <div class="stat-value" id="stat-breaks">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Auto-Resolved</div>
+            <div class="stat-value" id="stat-resolved">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Escalated</div>
+            <div class="stat-value" id="stat-escalated">0</div>
+        </div>
+    </div>
 
-function renderStats(s) {
-  const el = document.getElementById('stats');
-  if (!s || s.breaks_found === undefined) {
-    el.innerHTML = '<div class="stat"><div class="l">Click "Run reconciliation" to start</div></div>';
-    return;
-  }
-  el.innerHTML = `
-    <div class="stat"><div class="n">${s.total_ledger}</div><div class="l">ledger records</div></div>
-    <div class="stat"><div class="n">${s.auto_matched}</div><div class="l">auto-matched</div></div>
-    <div class="stat"><div class="n">${s.breaks_found}</div><div class="l">breaks found</div></div>
-    <div class="stat"><div class="n">${s.auto_resolved}</div><div class="l">auto-resolved</div></div>
-    <div class="stat"><div class="n">${s.escalated}</div><div class="l">escalated</div></div>
-    <div class="stat"><div class="n">${Math.round((s.memory_hit_rate || 0) * 100)}%</div><div class="l">resolved from memory</div></div>
-  `;
-}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Record ID</th>
+                    <th>Break Type</th>
+                    <th>Amount</th>
+                    <th>Severity (Gemma)</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- Rows populated by JS -->
+            </tbody>
+        </table>
+    </div>
 
-function renderBreaks(breaks) {
-  const rows = document.getElementById('rows');
-  rows.innerHTML = '';
-  breaks.forEach(b => {
-    const status = b.resolution.status;
-    const tr = document.createElement('tr');
-    tr.className = status;
-    const src = b.investigation.source === 'pattern_memory' ? ' (memory)' : '';
-    tr.innerHTML = `<td>${b.transaction_id}</td><td>${b.investigation.break_type}</td><td>${b.investigation.severity || '-'}</td><td>${status}</td><td>${b.investigation.reasoning}${src}</td>`;
-    rows.appendChild(tr);
-  });
-}
+    <script>
+        let pollInterval = null;
 
-refresh();
-</script>
+        async function triggerReconciliation() {
+            const btn = document.getElementById('run-btn');
+            btn.disabled = true;
+            btn.innerText = "Triggering Swarm...";
+
+            try {
+                await fetch('/reconcile', { method: 'POST' });
+                document.getElementById('live-indicator').style.display = 'flex';
+                btn.innerText = "Processing in Background...";
+                
+                // Start polling every 2 seconds
+                if (!pollInterval) {
+                    pollInterval = setInterval(fetchUpdates, 2000);
+                }
+            } catch (err) {
+                console.error("Failed to trigger pipeline", err);
+                btn.disabled = false;
+                btn.innerText = "Run Reconciliation";
+            }
+        }
+
+        async function fetchUpdates() {
+            try {
+                const [statsRes, breaksRes] = await Promise.all([
+                    fetch('/stats'),
+                    fetch('/breaks')
+                ]);
+                
+                const stats = await statsRes.json();
+                const breaks = await breaksRes.json();
+                
+                updateStats(stats);
+                updateTable(breaks);
+
+                // Optional logic to stop polling if pipeline finishes (e.g., matching known target length)
+            } catch (err) {
+                console.error("Error fetching live data", err);
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('stat-matched').innerText = stats.auto_matched || 0;
+            document.getElementById('stat-breaks').innerText = stats.breaks_found || 0;
+            document.getElementById('stat-resolved').innerText = stats.auto_resolved || 0;
+            document.getElementById('stat-escalated').innerText = stats.escalated || 0;
+        }
+
+        function updateTable(breaks) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = ''; // Clear current rows
+
+            breaks.forEach(br => {
+                const severity = br.investigation?.severity || 'unknown';
+                const status = br.resolution?.status || 'processing';
+                const breakType = br.investigation?.break_type || 'unclassified';
+                
+                // Visible Row
+                const tr = document.createElement('tr');
+                tr.className = 'main-row';
+                tr.onclick = () => toggleDetails(br.id);
+                tr.innerHTML = `
+                    <td><strong>${br.id || 'N/A'}</strong></td>
+                    <td>${breakType.replace('_', ' ').toUpperCase()}</td>
+                    <td>${br.amount || '---'}</td>
+                    <td><span class="badge severity-${severity}">${severity}</span></td>
+                    <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
+                `;
+
+                // Hidden Investigation Packet Row
+                const detailsTr = document.createElement('tr');
+                detailsTr.id = `details-${br.id}`;
+                detailsTr.className = 'details-row';
+                detailsTr.innerHTML = `
+                    <td colspan="5">
+                        <div class="details-content">
+                            <h4>Investigator Agent (Gemini 2.5 Flash)</h4>
+                            <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'} <br/> <strong>Confidence:</strong> ${(br.investigation?.confidence * 100).toFixed(0)}%</p>
+                            
+                            <h4>Resolver Agent</h4>
+                            <p><strong>Action Taken:</strong> ${br.resolution?.narrative || 'Pending agent action...'}</p>
+                        </div>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+                tbody.appendChild(detailsTr);
+            });
+        }
+
+        function toggleDetails(id) {
+            const row = document.getElementById(`details-${id}`);
+            if (row) row.classList.toggle('open');
+        }
+
+        // Fetch initial state on page load
+        fetchUpdates();
+    </script>
 </body>
 </html>
