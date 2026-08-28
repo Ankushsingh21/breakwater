@@ -1,46 +1,62 @@
 """Thin wrapper around a Gemma model on Vertex AI. Falls back to a deterministic
 heuristic if Vertex AI isn't configured, so the pipeline still runs standalone."""
+import json
 import os
 
-GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemini-2.5-flash")
-_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-_endpoint = None
-if _PROJECT:
+_client = None
+if PROJECT_ID:
     try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel
-        # Hard-route to us-east1 to bypass free-tier region locks
-        vertexai.init(project=_PROJECT, location="us-east1")
-        _endpoint = GenerativeModel(GEMMA_MODEL)
+        from google import genai
+        
+        # Using the new genai client required for 2.5-flash
+        _client = genai.Client(
+            project=PROJECT_ID,
+            location="us-central1" 
+        )
+        print(f"[gemini_client] Successfully initialized GenAI client for {PROJECT_ID}")
     except Exception as e:
-        print(f"[gemma_client] Vertex AI unavailable: {e}")
+        print(f"[gemini_client] GenAI SDK unavailable: {e}")
 
+PROMPT_TEMPLATE = """You are a reconciliation investigator at a bank.
+Two transaction records disagree. Classify the break and explain why in one sentence.
 
-def tag_severity(break_type, amount, confidence):
-    if _endpoint is None:
-        return _fallback_severity(break_type, amount, confidence)
-    prompt = (
-        f"Classify this reconciliation break's business severity as exactly one word "
-        f"(low, medium, or high). Break type: {break_type}. Amount: {amount}. "
-        f"Classification confidence: {confidence}."
+Ledger record: {ledger}
+Processor record: {processor}
+Matcher flagged reason: {reason}
+
+Respond with ONLY valid JSON in this exact shape:
+{{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.8, "reasoning": "one sentence"}}
+"""
+
+def classify_break(ledger, processor, reason):
+    if _client is None:
+        return _fallback_classify(reason)
+    
+    prompt = PROMPT_TEMPLATE.format(
+        ledger=ledger, 
+        processor=processor, 
+        reason=reason
     )
+    
     try:
-        response = _endpoint.generate_content(prompt)
-        word = response.text.strip().lower()
-        return word if word in ("low", "medium", "high") else _fallback_severity(break_type, amount, confidence)
+        response = _client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt
+        )
+        text = response.text.strip().strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+        return json.loads(text)
     except Exception as e:
-        print(f"[gemma_client] call failed, using fallback: {e}")
-        return _fallback_severity(break_type, amount, confidence)
+        print(f"[gemini_client] API call failed, using fallback: {e}")
+        return _fallback_classify(reason)
 
-
-def _fallback_severity(break_type, amount, confidence):
-    try:
-        amount = float(amount)
-    except (TypeError, ValueError):
-        amount = 0
-    if break_type in ("missing_entry", "unknown") or amount > 20000:
-        return "high"
-    if confidence < 0.6:
-        return "medium"
-    return "low"
+def _fallback_classify(reason):
+    if reason == "amount_mismatch":
+        return {"break_type": "currency_rounding", "confidence": 0.6, "reasoning": "Amount differs by a small margin (fallback rule)."}
+    if reason == "timestamp_mismatch":
+        return {"break_type": "timing_diff", "confidence": 0.6, "reasoning": "Timestamps differ but amounts match (fallback rule)."}
+    return {"break_type": "unknown", "confidence": 0.3, "reasoning": "Fallback stub could not classify."}
