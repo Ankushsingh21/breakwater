@@ -44,7 +44,7 @@ gcloud run deploy $SERVICE \
   --region $REGION \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars USE_LOCAL_STORE=false,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-2.0-flash,GEMMA_MODEL=gemini-2.0-flash
+  --set-env-vars USE_LOCAL_STORE=false,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-2.5-flash,GEMMA_MODEL=gemini-2.5-flash
 
 # 6. Wire up Pub/Sub
 gcloud pubsub topics create breakwater-trigger || true
