@@ -36,8 +36,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --role="roles/datastore.user" || true
 
 # 4. Build container directly into Artifact Registry
-gcloud builds submit --tag $IMAGE_URL --no-cache
-
+gcloud builds submit --tag $IMAGE_URL 
 # 5. Deploy to Cloud Run
 gcloud run deploy $SERVICE \
   --image $IMAGE_URL \
