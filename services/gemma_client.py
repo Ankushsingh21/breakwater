@@ -2,7 +2,7 @@
 heuristic if Vertex AI isn't configured, so the pipeline still runs standalone."""
 import os
 
-GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemini-1.5-flash-002")
+GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemini-2.5-flash")
 _PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 _endpoint = None
