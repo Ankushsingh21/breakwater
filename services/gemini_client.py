@@ -3,7 +3,6 @@ so no API key is required. Falls back to a deterministic stub if project isn't s
 import json
 import os
 
-# Vertex AI uses 1.5-flash as the current fastest/cheapest model tier
 MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
 
@@ -12,13 +11,13 @@ if PROJECT_ID:
     try:
         import vertexai
         from vertexai.generative_models import GenerativeModel
-        # Initialize with the project and default region
         vertexai.init(project=PROJECT_ID, location="us-central1")
         _client = GenerativeModel(MODEL)
         print(f"[gemini_client] Successfully initialized Vertex AI for {PROJECT_ID}")
     except Exception as e:
         print(f"[gemini_client] Vertex AI SDK unavailable, using fallback stub: {e}")
 
+# Escaped double-braces {{ }} around the JSON schema so str.format() ignores them
 PROMPT_TEMPLATE = """You are a reconciliation investigator at a bank.
 Two transaction records disagree. Classify the break and explain why in one sentence.
 
@@ -27,13 +26,19 @@ Processor record: {processor}
 Matcher flagged reason: {reason}
 
 Respond with ONLY valid JSON in this exact shape:
-{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.0-1.0, "reasoning": "one sentence"}
+{{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.8, "reasoning": "one sentence"}}
 """
 
 def classify_break(ledger, processor, reason):
     if _client is None:
         return _fallback_classify(reason)
-    prompt = PROMPT_TEMPLATE.format(ledger=ledger, processor=processor, reason=reason)
+    
+    prompt = PROMPT_TEMPLATE.format(
+        ledger=ledger, 
+        processor=processor, 
+        reason=reason
+    )
+    
     try:
         response = _client.generate_content(prompt)
         text = response.text.strip().strip("`")
