@@ -1,13 +1,8 @@
-"""Pattern Memory - reuses a prior high-confidence classification for breaks with
-the same signature (counterparty + matcher reason) instead of re-calling the LLM.
-This is what lets Breakwater get faster and cheaper the longer it runs, and it
-produces a genuinely demoable metric: memory hit rate over a run."""
-from agents import auditor
-
+"""Pattern Memory - reuses prior high-confidence classifications."""
+from services.firestore_client import get_all_breaks
 
 def _signature(counterparty, reason):
     return f"{counterparty}:{reason}"
-
 
 def lookup(break_record):
     l = break_record.get("ledger") or {}
@@ -15,7 +10,8 @@ def lookup(break_record):
     counterparty = l.get("counterparty") or p.get("counterparty")
     sig = _signature(counterparty, break_record.get("reason"))
 
-    for entry in reversed(auditor.read_all()):
+    # Fetch from unified firestore client
+    for entry in reversed(get_all_breaks()):
         prior = entry.get("investigation", {})
         if prior.get("confidence", 0) < 0.5:
             continue
