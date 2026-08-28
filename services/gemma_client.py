@@ -2,7 +2,7 @@
 heuristic if Vertex AI isn't configured, so the pipeline still runs standalone."""
 import os
 
-GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma-2-9b-it")
+GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemini-1.5-flash-002")
 _PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 _endpoint = None
@@ -10,10 +10,11 @@ if _PROJECT:
     try:
         import vertexai
         from vertexai.generative_models import GenerativeModel
-        vertexai.init(project=_PROJECT)
+        # Hard-route to us-east1 to bypass free-tier region locks
+        vertexai.init(project=_PROJECT, location="us-east1")
         _endpoint = GenerativeModel(GEMMA_MODEL)
     except Exception as e:
-        print(f"[gemma_client] Vertex AI unavailable, using fallback heuristic: {e}")
+        print(f"[gemma_client] Vertex AI unavailable: {e}")
 
 
 def tag_severity(break_type, amount, confidence):
