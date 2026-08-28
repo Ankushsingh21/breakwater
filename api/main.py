@@ -1,17 +1,42 @@
 import os
 import json
 import base64
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from google.cloud import pubsub_v1
+
+# Import your pipeline and DB functions
 from agents.matcher import run as run_matcher
 from agents.orchestrator import process_single_break
+from services.firestore_client import get_all_breaks, get_stats
 
 app = FastAPI()
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
 TOPIC_ID = "breakwater-trigger"
 
+# Initialize Pub/Sub Client
 publisher = pubsub_v1.PublisherClient() if PROJECT_ID else None
 topic_path = publisher.topic_path(PROJECT_ID, TOPIC_ID) if publisher else None
+
+# --- UI & Dashboard Routes ---
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_dashboard():
+    with open("dashboard/index.html", "r") as f:
+        return f.read()
+
+@app.get("/stats")
+async def get_dashboard_stats():
+    # Returns { auto_matched: int, breaks_found: int, auto_resolved: int, escalated: int }
+    return get_stats()
+
+@app.get("/breaks")
+async def get_dashboard_breaks():
+    # Returns the list of processed break dictionaries from the DB
+    return get_all_breaks()
+
+
+# --- API & Webhook Routes ---
 
 @app.post("/reconcile")
 async def trigger_reconciliation():
