@@ -1,24 +1,56 @@
-"""Firestore wrapper. Only actually imports the SDK when USE_LOCAL_STORE=false."""
+"""Firestore wrapper. Uses local JSON file when USE_LOCAL_STORE=true."""
 import os
+import json
 
 _db = None
-
+USE_LOCAL = os.getenv("USE_LOCAL_STORE", "false").lower() == "true"
+LOCAL_FILE = "local_audit_trail.json"
 
 def _get_db():
     global _db
-    if _db is None:
+    if _db is None and not USE_LOCAL:
         from google.cloud import firestore
         _db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
     return _db
 
-
 def write_record(entry):
+    """Appends a record to Firestore or the local JSON fallback."""
+    if USE_LOCAL:
+        records = get_all_breaks()
+        records.append(entry)
+        with open(LOCAL_FILE, "w") as f:
+            json.dump(records, f)
+        return
+
     db = _get_db()
     collection = os.getenv("FIRESTORE_COLLECTION", "audit_trail")
     db.collection(collection).add(entry)
 
+def get_all_breaks():
+    """Returns all processed breaks for the dashboard UI."""
+    if USE_LOCAL:
+        if os.path.exists(LOCAL_FILE):
+            with open(LOCAL_FILE, "r") as f:
+                return json.load(f)
+        return []
+        
+    try:
+        db = _get_db()
+        collection = os.getenv("FIRESTORE_COLLECTION", "audit_trail")
+        return [doc.to_dict() for doc in db.collection(collection).stream()]
+    except Exception as e:
+        print(f"[firestore_client] Error reading breaks: {e}")
+        return []
 
-def read_all():
-    db = _get_db()
-    collection = os.getenv("FIRESTORE_COLLECTION", "audit_trail")
-    return [doc.to_dict() for doc in db.collection(collection).stream()]
+def get_stats():
+    """Aggregates metrics for the live dashboard counters."""
+    breaks = get_all_breaks()
+    
+    resolved = sum(1 for b in breaks if b.get("resolution", {}).get("status") == "auto_resolved")
+    escalated = sum(1 for b in breaks if b.get("resolution", {}).get("status") == "escalated")
+    
+    return {
+        "breaks_found": len(breaks),
+        "auto_resolved": resolved,
+        "escalated": escalated
+    }
