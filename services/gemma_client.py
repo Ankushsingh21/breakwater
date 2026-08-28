@@ -1,13 +1,14 @@
 import os
 
-GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemini-2.5-flash")
+# Legitimate open-source Gemma model on Vertex AI
+GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma-2-9b-it")
 _PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 _client = None
 if _PROJECT:
     try:
         from google import genai
-        # Add vertexai=True to route to Google Cloud instead of AI Studio
+        # vertexai=True routes to Google Cloud securely
         _client = genai.Client(
             vertexai=True,
             project=_PROJECT,
@@ -20,6 +21,7 @@ if _PROJECT:
 def tag_severity(break_type, amount, confidence):
     if _client is None:
         return _fallback_severity(break_type, amount, confidence)
+    
     prompt = (
         f"Classify this reconciliation break's business severity as exactly one word "
         f"(low, medium, or high). Break type: {break_type}. Amount: {amount}. "
