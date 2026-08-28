@@ -8,16 +8,16 @@ from agents.severity_tagger import tag as tag_severity
 from agents.resolver import resolve
 from agents.auditor import record
 
-# 1. Define the Agents using official ADK syntax
+# 1. Define the Agents using official ADK syntax and latest models
 investigator_agent = Agent(
     name="investigator_agent",
-    model="gemini-1.5-flash",
+    model="gemini-2.0-flash",
     instruction="Analyze transaction records and classify the break reason."
 )
 
 resolver_agent = Agent(
     name="resolver_agent",
-    model="gemini-1.5-flash",
+    model="gemini-2.0-flash",
     instruction="Determine if the break can be auto-resolved based on confidence score."
 )
 
