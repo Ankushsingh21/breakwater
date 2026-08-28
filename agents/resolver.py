@@ -1,16 +1,29 @@
-"""Resolver Agent - autonomously fixes known-safe breaks, escalates the rest with
-a structured investigation packet instead of guessing."""
+"""Resolver Agent - autonomously fixes known-safe breaks, escalates the rest."""
+import os
+
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+
+_client = None
+if _PROJECT:
+    try:
+        from google import genai
+        _client = genai.Client(vertexai=True, project=_PROJECT, location="us-central1")
+    except Exception:
+        pass
 
 AUTO_RESOLVE_TYPES = {"timing_diff", "currency_rounding", "duplicate"}
 
-
 def resolve(break_record, investigation):
-    break_type = investigation["break_type"]
+    break_type = investigation.get("break_type", "unknown")
     confidence = investigation.get("confidence", 0)
 
+    # Safe-by-Default threshold
     if break_type in AUTO_RESOLVE_TYPES and confidence >= 0.7:
-        return {"status": "auto_resolved", "break_type": break_type, "narrative": _narrative_for(break_type, break_record)}
+        narrative = _generate_narrative(break_type, break_record, investigation.get("reasoning"))
+        return {"status": "auto_resolved", "break_type": break_type, "narrative": narrative}
 
+    # Escalate ambiguous cases with a structured packet
     packet = {
         "transaction_id": break_record.get("transaction_id"),
         "break_type": break_type,
@@ -21,13 +34,15 @@ def resolve(break_record, investigation):
     }
     return {"status": "escalated", "break_type": break_type, "packet": packet}
 
-
-def _narrative_for(break_type, break_record):
-    txn = break_record.get("transaction_id")
-    if break_type == "duplicate":
-        return f"Duplicate processor entry for {txn} - booking a reversing entry to cancel the extra charge."
-    if break_type == "timing_diff":
-        return f"{txn} settled on a different date than the ledger post - timing difference, marking as reconciled."
-    if break_type == "currency_rounding":
-        return f"{txn} amount differs by a small margin consistent with FX rounding - booking a rounding adjustment entry."
-    return f"{txn} auto-resolved."
+def _generate_narrative(break_type, break_record, reasoning):
+    txn = break_record.get("transaction_id", "Unknown")
+    if not _client:
+        # Fallback stub narrative
+        return f"{txn} auto-resolved ({break_type}). {reasoning}"
+    
+    prompt = f"Draft a professional accounting narrative (one sentence) to resolve a {break_type} for transaction {txn}. Context: {reasoning}"
+    try:
+        response = _client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        return response.text.strip()
+    except Exception:
+        return f"{txn} auto-resolved ({break_type}). {reasoning}"
