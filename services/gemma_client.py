@@ -7,11 +7,13 @@ _client = None
 if _PROJECT:
     try:
         from google import genai
+        # Add vertexai=True to route to Google Cloud instead of AI Studio
         _client = genai.Client(
+            vertexai=True,
             project=_PROJECT,
             location="us-central1"
         )
-        print(f"[gemma_client] Successfully initialized GenAI client")
+        print(f"[gemma_client] Successfully initialized GenAI Vertex client")
     except Exception as e:
         print(f"[gemma_client] GenAI client unavailable: {e}")
 
