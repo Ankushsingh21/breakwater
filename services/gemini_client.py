@@ -11,9 +11,8 @@ if PROJECT_ID:
         import vertexai
         from vertexai.generative_models import GenerativeModel
         
-        # Upgraded to the currently supported 2.0-flash model
-        vertexai.init(project=PROJECT_ID, location="us-central1")
-        _client = GenerativeModel("gemini-2.0-flash")
+        vertexai.init(project=PROJECT_ID, location="us-east1")
+        _client = GenerativeModel("gemini-1.5-flash-002")
         print(f"[gemini_client] Successfully initialized Vertex AI for {PROJECT_ID}")
     except Exception as e:
         print(f"[gemini_client] Vertex AI SDK unavailable, using fallback stub: {e}")
