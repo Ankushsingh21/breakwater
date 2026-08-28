@@ -4,16 +4,16 @@ from agents.severity_tagger import tag as tag_severity
 from agents.resolver import resolve
 from agents.auditor import record
 
-# 1. Define the Agents
+# 1. Define the Agents using Gemini 3.5 Flash
 investigator_agent = Agent(
     name="investigator_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     instruction="Analyze transaction records and classify the break reason."
 )
 
 resolver_agent = Agent(
     name="resolver_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     instruction="Determine if the break can be auto-resolved based on confidence score."
 )
 
@@ -28,7 +28,7 @@ def process_single_break(br):
     # A. Investigator Agent classifies the break
     investigation = investigate(br)
     
-    # B. Severity Tagger (Gemma) tags business risk
+    # B. Severity Tagger (Gemma 4 MaaS) tags business risk
     investigation["severity"] = tag_severity(br, investigation)
     
     # C. Resolver Agent decides action
