@@ -1,39 +1,68 @@
-"""Orchestrator - wires Matcher -> Investigator -> Resolver -> Auditor into one
-asynchronous pipeline. This is the multi-agent core of Breakwater."""
-from agents import matcher, investigator, severity_tagger, resolver, auditor
+"""
+Orchestrates the reconciliation workflow using the Google Agent Development Kit (ADK) 
+State Graph. This makes the multi-agent decision process autonomous and observable.
+"""
+from google_adk.agents import StateGraph, AgentNode
+from google_adk.memory import FirestoreMemory
+from .investigator import classify_break
+from .resolver import auto_resolve
 
+# Define the state payload that passes between agents
+class ReconciliationState(dict):
+    ledger_record: dict
+    processor_record: dict
+    break_reason: str
+    investigation_result: dict
+    resolution_status: str
 
-def run_pipeline(ledger_path="data/ledger.csv", processor_path="data/processor.csv"):
-    match_result = matcher.run(ledger_path, processor_path)
-    results = []
+# Node 1: The Investigator Agent
+def run_investigator(state: ReconciliationState):
+    print(f"[ADK] Investigator Agent analyzing break: {state['break_reason']}")
+    result = classify_break(
+        state['ledger_record'], 
+        state['processor_record'], 
+        state['break_reason']
+    )
+    state['investigation_result'] = result
+    return state
 
-    for br in match_result["breaks"]:
-        investigation = investigator.investigate(br)
-        investigation["severity"] = severity_tagger.tag(br, investigation)
-        resolution = resolver.resolve(br, investigation)
-        entry = auditor.record(br, investigation, resolution)
-        results.append(entry)
+# Node 2: The Resolver Agent
+def run_resolver(state: ReconciliationState):
+    confidence = state['investigation_result'].get('confidence', 0.0)
+    print(f"[ADK] Resolver Agent received confidence: {confidence}")
+    
+    if confidence > 0.7:
+        state['resolution_status'] = "AUTO_RESOLVED"
+    else:
+        state['resolution_status'] = "ESCALATED_TO_HUMAN"
+    return state
 
-    total_breaks = len(match_result["breaks"])
-    memory_hits = sum(1 for r in results if r["investigation"].get("source") == "pattern_memory")
-    severity_counts = {"low": 0, "medium": 0, "high": 0}
-    for r in results:
-        sev = r["investigation"].get("severity", "low")
-        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+def build_agentic_pipeline():
+    """Builds the ADK execution graph."""
+    graph = StateGraph(ReconciliationState)
+    
+    # Register our agents as nodes
+    graph.add_node("investigator", run_investigator)
+    graph.add_node("resolver", run_resolver)
+    
+    # Define the autonomous workflow edges
+    graph.add_edge("investigator", "resolver")
+    graph.set_entry_point("investigator")
+    
+    # Compile the agentic workflow
+    return graph.compile()
 
-    summary = {
-        "total_ledger": match_result["total_ledger"],
-        "total_processor": match_result["total_processor"],
-        "auto_matched": len(match_result["matched"]),
-        "breaks_found": total_breaks,
-        "auto_resolved": sum(1 for r in results if r["resolution"]["status"] == "auto_resolved"),
-        "escalated": sum(1 for r in results if r["resolution"]["status"] == "escalated"),
-        "memory_hit_rate": round(memory_hits / total_breaks, 3) if total_breaks else 0,
-        "severity_breakdown": severity_counts,
+# Initialize the global pipeline instance
+pipeline = build_agentic_pipeline()
+
+def run_pipeline(break_record):
+    """Entrypoint called by your FastAPI backend."""
+    initial_state = {
+        "ledger_record": break_record.get('ledger', {}),
+        "processor_record": break_record.get('processor', {}),
+        "break_reason": break_record.get('reason', 'unknown')
     }
-    return {"summary": summary, "breaks": results}
-
-
-if __name__ == "__main__":
-    out = run_pipeline()
-    print(out["summary"])
+    
+    # Execute the autonomous graph
+    final_state = pipeline.invoke(initial_state)
+    return final_state
