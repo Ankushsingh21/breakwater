@@ -3,7 +3,6 @@ so no API key is required. Falls back to a deterministic stub if project isn't s
 import json
 import os
 
-MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 _client = None
@@ -11,13 +10,14 @@ if PROJECT_ID:
     try:
         import vertexai
         from vertexai.generative_models import GenerativeModel
+        
+        # Hardcode the stable alias so we never hit a 404 on missing version suffixes
         vertexai.init(project=PROJECT_ID, location="us-central1")
-        _client = GenerativeModel(MODEL)
+        _client = GenerativeModel("gemini-1.5-flash")
         print(f"[gemini_client] Successfully initialized Vertex AI for {PROJECT_ID}")
     except Exception as e:
         print(f"[gemini_client] Vertex AI SDK unavailable, using fallback stub: {e}")
 
-# Escaped double-braces {{ }} around the JSON schema so str.format() ignores them
 PROMPT_TEMPLATE = """You are a reconciliation investigator at a bank.
 Two transaction records disagree. Classify the break and explain why in one sentence.
 
