@@ -2,7 +2,7 @@ import json
 import os
 
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 _client = None
 if PROJECT_ID:
