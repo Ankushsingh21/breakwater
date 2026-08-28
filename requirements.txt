@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 google-generativeai
 google-adk
-google-cloud-aiplatform>=1.60.0
+google-cloud-aiplatform>=1.79.0
 google-genai>=0.1.0
 google-cloud-firestore
 google-cloud-pubsub
