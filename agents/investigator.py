@@ -1,24 +1,26 @@
-"""Investigator Agent - classifies WHY a break happened.
-Cheap, obvious cases are classified deterministically (no LLM cost).
-Genuinely ambiguous cases (amount/timestamp mismatches) go to Gemini."""
+"""Investigator Agent - determines the root cause of the break."""
 from services.gemini_client import classify_break
-from agents import pattern_memory
-
+from services.embeddings import check_near_duplicate
 
 def investigate(break_record):
-    l = break_record.get("ledger")
-    p = break_record.get("processor")
-    reason = break_record.get("reason")
+    # 1. Cheap Vector Pre-Filter: Check for semantic duplicates first
+    is_near_dup = check_near_duplicate(break_record)
+    
+    if is_near_dup:
+        print("[Investigator] Caught near-duplicate via text embeddings. Bypassing LLM.")
+        return {
+            "break_type": "duplicate",
+            "confidence": 0.95,
+            "reasoning": "Embedding similarity confirms transaction descriptions are semantically identical despite minor text variations.",
+            "source": "embedding_prefilter"
+        }
 
-    if reason == "multiple_processor_matches":
-        return {"break_type": "duplicate", "confidence": 0.95, "reasoning": "Processor feed has more than one record for this transaction ID.", "source": "rule"}
-    if reason in ("no_processor_match", "processor_only"):
-        return {"break_type": "missing_entry", "confidence": 0.85, "reasoning": "Transaction present in only one feed.", "source": "rule"}
-
-    remembered = pattern_memory.lookup(break_record)
-    if remembered:
-        return remembered
-
-    result = classify_break(l, p, reason)
-    result.setdefault("source", "gemini")
+    # 2. Fallback to Gemini Reasoning for ambiguous breaks
+    ledger_str = str(break_record.get("ledger", {}))
+    processor_str = str(break_record.get("processor", {}))
+    reason = break_record.get("reason", "unknown")
+    
+    result = classify_break(ledger_str, processor_str, reason)
+    result["source"] = "gemini_reasoning"
+    
     return result
