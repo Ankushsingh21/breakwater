@@ -1,5 +1,3 @@
-"""Vertex AI wrapper. Automatically uses GCP IAM credentials in Cloud Run,
-so no API key is required. Falls back to a deterministic stub if project isn't set."""
 import json
 import os
 
@@ -9,15 +7,16 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 _client = None
 if PROJECT_ID:
     try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel
+        from google import genai
         
-        # Hard-route to us-east1 to bypass free-tier region locks
-        vertexai.init(project=PROJECT_ID, location="us-east1")
-        _client = GenerativeModel(GEMINI_MODEL)
-        print(f"[gemini_client] Successfully initialized Vertex AI in us-east1")
+        # Using the new genai client required for 2.5-flash
+        _client = genai.Client(
+            project=PROJECT_ID,
+            location="us-central1" 
+        )
+        print(f"[gemini_client] Successfully initialized GenAI client for {PROJECT_ID}")
     except Exception as e:
-        print(f"[gemini_client] Vertex AI SDK unavailable: {e}")
+        print(f"[gemini_client] GenAI SDK unavailable: {e}")
 
 PROMPT_TEMPLATE = """You are a reconciliation investigator at a bank.
 Two transaction records disagree. Classify the break and explain why in one sentence.
@@ -41,7 +40,10 @@ def classify_break(ledger, processor, reason):
     )
     
     try:
-        response = _client.generate_content(prompt)
+        response = _client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt
+        )
         text = response.text.strip().strip("`")
         if text.lower().startswith("json"):
             text = text[4:].strip()
