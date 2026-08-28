@@ -4,6 +4,7 @@ import json
 import os
 
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 _client = None
 if PROJECT_ID:
@@ -11,11 +12,12 @@ if PROJECT_ID:
         import vertexai
         from vertexai.generative_models import GenerativeModel
         
+        # Hard-route to us-east1 to bypass free-tier region locks
         vertexai.init(project=PROJECT_ID, location="us-east1")
-        _client = GenerativeModel("gemini-1.5-flash-002")
-        print(f"[gemini_client] Successfully initialized Vertex AI for {PROJECT_ID}")
+        _client = GenerativeModel(GEMINI_MODEL)
+        print(f"[gemini_client] Successfully initialized Vertex AI in us-east1")
     except Exception as e:
-        print(f"[gemini_client] Vertex AI SDK unavailable, using fallback stub: {e}")
+        print(f"[gemini_client] Vertex AI SDK unavailable: {e}")
 
 PROMPT_TEMPLATE = """You are a reconciliation investigator at a bank.
 Two transaction records disagree. Classify the break and explain why in one sentence.
