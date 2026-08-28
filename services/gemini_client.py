@@ -9,12 +9,13 @@ if PROJECT_ID:
     try:
         from google import genai
         
-        # Using the new genai client required for 2.5-flash
+        # Add vertexai=True to route to Google Cloud instead of AI Studio
         _client = genai.Client(
+            vertexai=True,
             project=PROJECT_ID,
             location="us-central1" 
         )
-        print(f"[gemini_client] Successfully initialized GenAI client for {PROJECT_ID}")
+        print(f"[gemini_client] Successfully initialized GenAI Vertex client for {PROJECT_ID}")
     except Exception as e:
         print(f"[gemini_client] GenAI SDK unavailable: {e}")
 
