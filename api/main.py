@@ -1,20 +1,14 @@
 import os
-import json
-import base64
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import HTMLResponse
-from google.cloud import pubsub_v1
+import csv
+from io import StringIO
+from fastapi import FastAPI, BackgroundTasks, UploadFile, File
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from agents.matcher import run as run_matcher
 from agents.orchestrator import process_single_break
 from services.firestore_client import get_all_breaks, get_stats, clear_db
 
 app = FastAPI()
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
-TOPIC_ID = "breakwater-trigger"
-
-publisher = pubsub_v1.PublisherClient() if PROJECT_ID else None
-topic_path = publisher.topic_path(PROJECT_ID, TOPIC_ID) if publisher else None
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
@@ -34,45 +28,76 @@ async def reset_system():
     clear_db()
     return {"status": "ok"}
 
-@app.post("/reconcile")
-async def trigger_reconciliation(background_tasks: BackgroundTasks):
-    """Wipes old data, runs deterministic matching instantly, and queues LLM agents."""
+def process_swarm_in_background(breaks):
+    """Runs the LLM agents natively in the background thread."""
+    for br in breaks:
+        try:
+            process_single_break(br)
+        except Exception as e:
+            print(f"[Swarm Error] Failed processing break: {e}")
+
+@app.post("/upload_and_reconcile")
+async def upload_and_reconcile(
+    background_tasks: BackgroundTasks,
+    ledger: UploadFile = File(...),
+    processor: UploadFile = File(...)
+):
+    """Accepts enterprise CSVs, matches instantly, and queues the agents."""
+    os.makedirs("data", exist_ok=True)
+    ledger_path = f"data/{ledger.filename}"
+    processor_path = f"data/{processor.filename}"
+    
+    with open(ledger_path, "wb") as f:
+        f.write(await ledger.read())
+    with open(processor_path, "wb") as f:
+        f.write(await processor.read())
+        
     clear_db()
     
-    # Run the Matcher instantly to get exact numbers for the UI
-    match_results = run_matcher()
+    # 1. Deterministic Matcher (Fast)
+    match_results = run_matcher(ledger_path=ledger_path, processor_path=processor_path)
     breaks = match_results.get("breaks", [])
     matched_count = len(match_results.get("matched", []))
     target_breaks = len(breaks)
 
-    def fan_out():
-        if publisher and topic_path:
-            for br in breaks:
-                publisher.publish(topic_path, json.dumps(br).encode("utf-8"))
-        else:
-            for br in breaks:
-                process_single_break(br)
-
-    # Push the slow LLM processing to the background
-    background_tasks.add_task(fan_out)
+    # 2. Asynchronous LLM Agents (Slow)
+    if target_breaks > 0:
+        background_tasks.add_task(process_swarm_in_background, breaks)
     
-    # Return the exact target metrics to the UI so it knows when to stop polling
     return {
         "status": "processing", 
         "target_breaks": target_breaks,
         "matched": matched_count
     }
 
-@app.post("/process_break")
-async def pubsub_push_handler(request: Request):
-    envelope = await request.json()
-    if not envelope or "message" not in envelope:
-        return {"status": "bad request"}
+@app.get("/export")
+async def export_csv():
+    """Generates a downloadable CSV audit report."""
+    breaks = get_all_breaks()
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Record ID", "Break Type", "Amount", "Currency", "Severity", "Status", "Agent Narrative"])
     
-    pubsub_message = envelope["message"]
-    if "data" in pubsub_message:
-        br_data = base64.b64decode(pubsub_message["data"]).decode("utf-8")
-        br = json.loads(br_data)
-        process_single_break(br)
+    for br in breaks:
+        l = br.get("ledger") or {}
+        p = br.get("processor") or {}
         
-    return {"status": "ok"}
+        if isinstance(l, list) and len(l) > 0: l = l[0]
+        if isinstance(p, list) and len(p) > 0: p = p[0]
+        
+        record_id = br.get("transaction_id") or l.get("transaction_id") or p.get("transaction_id")
+        amount = br.get("amount") or l.get("amount") or p.get("amount", 0)
+        currency = l.get("currency") or p.get("currency", "USD")
+        b_type = br.get("investigation", {}).get("break_type", "unknown")
+        severity = br.get("investigation", {}).get("severity", "unknown")
+        status = br.get("resolution", {}).get("status", "processing")
+        narrative = br.get("resolution", {}).get("narrative", "")
+        
+        writer.writerow([record_id, b_type, amount, currency, severity, status, narrative])
+    
+    output.seek(0)
+    return StreamingResponse(
+        output, 
+        media_type="text/csv", 
+        headers={"Content-Disposition": "attachment; filename=reconciliation_audit_report.csv"}
+    )
