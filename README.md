@@ -31,3 +31,57 @@ pip install -r requirements.txt
 
 # Generate synthetic ledger.csv and processor.csv for the demo (~80 breaks)
 python data/generate_synthetic_data.py --rows 1000
+```
+
+[INSERT_TRIPLE_BACKTICKS_HERE]
+
+**2. Configure Vertex AI**
+```
+cp .env.example .env
+# Fill in your GOOGLE_CLOUD_PROJECT ID. 
+# Ensure Vertex AI API is enabled in your GCP project.
+```
+
+**3. Run the App**
+```
+uvicorn api.main:app --reload --port 8080
+```
+Open `http://localhost:8080`. Drag and drop the generated `ledger.csv` and `processor.csv` files into the UI and click **Upload & Reconcile**.
+
+> **Safe-by-default note:** If Vertex AI quotas are hit or network connectivity fails, the Investigator gracefully falls back to a conservative rule-based stub that returns low confidence scores (30%). This guarantees the Resolver correctly escalates to human review instead of auto-fixing blindly. 
+
+## ☁️ Deploying to Google Cloud Run
+
+To deploy Breakwater as a serverless enterprise application:
+```
+bash deploy/deploy.sh
+```
+*Note: To ensure the AI swarm processes large background batches without Cloud Run throttling the CPU, ensure your service has "CPU is always allocated" enabled in the GCP Console.*
+
+## 📁 Project Structure
+
+```
+breakwater/
+├── data/generate_synthetic_data.py  # Generates CSV ledger + processor feeds
+├── agents/
+│   ├── matcher.py           # Agent 1 - Deterministic Pandas matching
+│   ├── investigator.py      # Agent 2 - Gemini reasoning & classification
+│   ├── resolver.py          # Agent 3 - Auto-fix or escalate logic
+│   └── orchestrator.py      # Parallel ThreadPool orchestration
+├── services/
+│   ├── gemini_client.py     # Vertex AI Gemini 3.5 Flash integration
+│   ├── gemma_client.py      # Vertex AI Gemma 4 MaaS integration
+│   └── firestore_client.py  # Firestore immutable audit trail wrapper
+├── api/main.py              # FastAPI: File uploads, background tasks, CSV export
+├── dashboard/index.html     # Real-time polling Vanilla JS dashboard
+├── deploy/deploy.sh         # GCP Cloud Run deployment script
+└── docs/
+    ├── ARCHITECTURE.md      # Detailed system design
+    └── BUILD_PLAN.md        # Hackathon build log
+```
+
+## 🎥 Note for Judges: How to Evaluate the Demo
+1. **The UI:** Notice the enterprise-grade CSV file ingestion and dynamic browser-native currency formatting (USD, EUR, GBP, INR).
+2. **The Speed:** The system clears exact matches instantly, and resolves the remaining AI breaks asynchronously via a parallelized thread pool.
+3. **The Explainability:** Click any row in the UI to expand the **Agent Audit Trail**. You will see exactly which model made the decision, its confidence score, and the one-sentence accounting narrative it generated. 
+4. **The Output:** Click **Download Audit Report** to generate the final CSV file that a real-world financial controller would hand to compliance auditors.
