@@ -148,47 +148,53 @@
         }
 
         function updateTable(breaks) {
-            const tbody = document.getElementById('table-body');
-            tbody.innerHTML = ''; // Clear current rows
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = '';
 
-            breaks.forEach(br => {
-                const severity = br.investigation?.severity || 'unknown';
-                const status = br.resolution?.status || 'processing';
-                const breakType = br.investigation?.break_type || 'unclassified';
-                
-                // Visible Row
-                const tr = document.createElement('tr');
-                tr.className = 'main-row';
-                tr.onclick = () => toggleDetails(br.id);
-                tr.innerHTML = `
-                    <td><strong>${br.id || 'N/A'}</strong></td>
-                    <td>${breakType.replace('_', ' ').toUpperCase()}</td>
-                    <td>${br.amount || '---'}</td>
-                    <td><span class="badge severity-${severity}">${severity}</span></td>
-                    <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
-                `;
+    breaks.forEach(br => {
+        // Extract values from ledger or processor fallback
+        const ledger = br.ledger || {};
+        const processor = br.processor || {};
+        
+        const recordId = br.transaction_id || ledger.transaction_id || processor.transaction_id || 'N/A';
+        const rawAmount = ledger.amount || processor.amount || '0.00';
+        const formattedAmount = `$${parseFloat(rawAmount).toFixed(2)}`;
 
-                // Hidden Investigation Packet Row
-                const detailsTr = document.createElement('tr');
-                detailsTr.id = `details-${br.id}`;
-                detailsTr.className = 'details-row';
-                detailsTr.innerHTML = `
-                    <td colspan="5">
-                        <div class="details-content">
-                            <h4>Investigator Agent (Gemini 2.5 Flash)</h4>
-                            <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'} <br/> <strong>Confidence:</strong> ${(br.investigation?.confidence * 100).toFixed(0)}%</p>
-                            
-                            <h4>Resolver Agent</h4>
-                            <p><strong>Action Taken:</strong> ${br.resolution?.narrative || 'Pending agent action...'}</p>
-                        </div>
-                    </td>
-                `;
+        const severity = br.investigation?.severity || 'unknown';
+        const status = br.resolution?.status || 'processing';
+        const breakType = br.investigation?.break_type || 'unclassified';
+        
+        // Main visible row
+        const tr = document.createElement('tr');
+        tr.className = 'main-row';
+        tr.onclick = () => toggleDetails(recordId);
+        tr.innerHTML = `
+            <td><strong>${recordId}</strong></td>
+            <td>${breakType.replace('_', ' ').toUpperCase()}</td>
+            <td>${formattedAmount}</td>
+            <td><span class="badge severity-${severity}">${severity}</span></td>
+            <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
+        `;
 
-                tbody.appendChild(tr);
-                tbody.appendChild(detailsTr);
-            });
-        }
+        // Expandable reasoning panel (proves AI agents worked)
+        const detailsTr = document.createElement('tr');
+        detailsTr.id = `details-${recordId}`;
+        detailsTr.className = 'details-row';
+        detailsTr.innerHTML = `
+            <td colspan="5">
+                <div class="details-content">
+                    <p><strong>Agent Source:</strong> ${br.investigation?.source || 'Gemini LLM Swarm'}</p>
+                    <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'}</p>
+                    <p><strong>Confidence:</strong> ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%</p>
+                    <p><strong>Action Narrative:</strong> ${br.resolution?.narrative || 'Pending agent action...'}</p>
+                </div>
+            </td>
+        `;
 
+        tbody.appendChild(tr);
+        tbody.appendChild(detailsTr);
+    });
+}
         function toggleDetails(id) {
             const row = document.getElementById(`details-${id}`);
             if (row) row.classList.toggle('open');
