@@ -31,19 +31,37 @@ async def reset_system():
     return {"status": "ok"}
 
 def _safe_process(br):
-    """Wrapper to catch exceptions for individual threads."""
+    """Wrapper to sanitize data, catch exceptions, and apply rate limits."""
     try:
+        # 1. Sanitize Data: Prevent Python AttributeError in down-stream agents
+        l = br.get("ledger")
+        p = br.get("processor")
+        
+        if l is None: 
+            br["ledger"] = {}
+        elif isinstance(l, list): 
+            br["ledger"] = l[0] if len(l) > 0 else {}
+            
+        if p is None: 
+            br["processor"] = {}
+        elif isinstance(p, list): 
+            br["processor"] = p[0] if len(p) > 0 else {}
+
+        # 2. Process through Swarm
         process_single_break(br)
+        
+        # 3. Rate Limit: 1-second pause per thread prevents Vertex AI Quota 429 Errors
+        time.sleep(1)
+        
     except Exception as e:
         print(f"[Swarm Error] Failed processing break: {e}")
 
 def process_swarm_in_background(breaks):
     """
-    Runs the LLM agents in PARALLEL to bypass Cloud Run timeouts and speed up the demo.
-    Uses 10 concurrent workers. 
+    Runs the LLM agents concurrently but throttled to 3 workers.
+    This prevents Vertex AI from blocking the API requests.
     """
-    # Vertex AI can handle a burst of traffic from 10 parallel workers easily.
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         executor.map(_safe_process, breaks)
     
     print("[Swarm] All background processing completed.")
@@ -72,7 +90,7 @@ async def upload_and_reconcile(
     matched_count = len(match_results.get("matched", []))
     target_breaks = len(breaks)
 
-    # 2. Asynchronous LLM Agents (Parallelized)
+    # 2. Asynchronous LLM Agents (Parallelized & Throttled)
     if target_breaks > 0:
         background_tasks.add_task(process_swarm_in_background, breaks)
     
