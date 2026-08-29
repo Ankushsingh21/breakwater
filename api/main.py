@@ -5,12 +5,18 @@ from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, BackgroundTasks, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
+from pydantic import BaseModel
 
 from agents.matcher import run as run_matcher
 from agents.orchestrator import process_single_break
-from services.firestore_client import get_all_breaks, get_stats, clear_db
+from services.firestore_client import get_all_breaks, get_stats, clear_db, update_break_status
 
 app = FastAPI()
+
+class OverrideRequest(BaseModel):
+    transaction_id: str
+    status: str
+    narrative: str
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
@@ -30,40 +36,31 @@ async def reset_system():
     clear_db()
     return {"status": "ok"}
 
+@app.post("/override")
+async def override_break(req: OverrideRequest):
+    """HITL Endpoint: Allows human operators to override escalated breaks."""
+    update_break_status(req.transaction_id, req.status, req.narrative)
+    return {"status": "success"}
+
 def _safe_process(br):
-    """Wrapper to sanitize data, catch exceptions, and apply rate limits."""
     try:
-        # 1. Sanitize Data: Prevent Python AttributeError in down-stream agents
         l = br.get("ledger")
         p = br.get("processor")
         
-        if l is None: 
-            br["ledger"] = {}
-        elif isinstance(l, list): 
-            br["ledger"] = l[0] if len(l) > 0 else {}
+        if l is None: br["ledger"] = {}
+        elif isinstance(l, list): br["ledger"] = l[0] if len(l) > 0 else {}
             
-        if p is None: 
-            br["processor"] = {}
-        elif isinstance(p, list): 
-            br["processor"] = p[0] if len(p) > 0 else {}
+        if p is None: br["processor"] = {}
+        elif isinstance(p, list): br["processor"] = p[0] if len(p) > 0 else {}
 
-        # 2. Process through Swarm
         process_single_break(br)
-        
-        # 3. Rate Limit: 1-second pause per thread prevents Vertex AI Quota 429 Errors
         time.sleep(0.20)
-        
     except Exception as e:
         print(f"[Swarm Error] Failed processing break: {e}")
 
 def process_swarm_in_background(breaks):
-    """
-    Runs the LLM agents concurrently but throttled to 3 workers.
-    This prevents Vertex AI from blocking the API requests.
-    """
     with ThreadPoolExecutor(max_workers=3) as executor:
         executor.map(_safe_process, breaks)
-    
     print("[Swarm] All background processing completed.")
 
 @app.post("/upload_and_reconcile")
@@ -72,37 +69,27 @@ async def upload_and_reconcile(
     ledger: UploadFile = File(...),
     processor: UploadFile = File(...)
 ):
-    """Accepts enterprise CSVs, matches instantly, and queues the agents."""
     os.makedirs("data", exist_ok=True)
     ledger_path = f"data/{ledger.filename}"
     processor_path = f"data/{processor.filename}"
     
-    with open(ledger_path, "wb") as f:
-        f.write(await ledger.read())
-    with open(processor_path, "wb") as f:
-        f.write(await processor.read())
+    with open(ledger_path, "wb") as f: f.write(await ledger.read())
+    with open(processor_path, "wb") as f: f.write(await processor.read())
         
     clear_db()
     
-    # 1. Deterministic Matcher (Fast)
     match_results = run_matcher(ledger_path=ledger_path, processor_path=processor_path)
     breaks = match_results.get("breaks", [])
     matched_count = len(match_results.get("matched", []))
     target_breaks = len(breaks)
 
-    # 2. Asynchronous LLM Agents (Parallelized & Throttled)
     if target_breaks > 0:
         background_tasks.add_task(process_swarm_in_background, breaks)
     
-    return {
-        "status": "processing", 
-        "target_breaks": target_breaks,
-        "matched": matched_count
-    }
+    return {"status": "processing", "target_breaks": target_breaks, "matched": matched_count}
 
 @app.get("/export")
 async def export_csv():
-    """Generates a downloadable CSV audit report."""
     breaks = get_all_breaks()
     output = StringIO()
     writer = csv.writer(output)
@@ -126,8 +113,4 @@ async def export_csv():
         writer.writerow([record_id, b_type, amount, currency, severity, status, narrative])
     
     output.seek(0)
-    return StreamingResponse(
-        output, 
-        media_type="text/csv", 
-        headers={"Content-Disposition": "attachment; filename=reconciliation_audit_report.csv"}
-    )
+    return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=reconciliation_audit_report.csv"})
