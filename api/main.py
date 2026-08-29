@@ -2,6 +2,7 @@ import os
 import csv
 import time
 from io import StringIO
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, BackgroundTasks, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
 
@@ -29,15 +30,23 @@ async def reset_system():
     clear_db()
     return {"status": "ok"}
 
+def _safe_process(br):
+    """Wrapper to catch exceptions for individual threads."""
+    try:
+        process_single_break(br)
+    except Exception as e:
+        print(f"[Swarm Error] Failed processing break: {e}")
+
 def process_swarm_in_background(breaks):
-    """Runs the LLM agents natively in the background thread."""
-    for br in breaks:
-        try:
-            process_single_break(br)
-            # Add a 0.5s pause to stay under Vertex AI Free Tier quotas
-            time.sleep(0.5)
-        except Exception as e:
-            print(f"[Swarm Error] Failed processing break: {e}")
+    """
+    Runs the LLM agents in PARALLEL to bypass Cloud Run timeouts and speed up the demo.
+    Uses 10 concurrent workers. 
+    """
+    # Vertex AI can handle a burst of traffic from 10 parallel workers easily.
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        executor.map(_safe_process, breaks)
+    
+    print("[Swarm] All background processing completed.")
 
 @app.post("/upload_and_reconcile")
 async def upload_and_reconcile(
@@ -63,7 +72,7 @@ async def upload_and_reconcile(
     matched_count = len(match_results.get("matched", []))
     target_breaks = len(breaks)
 
-    # 2. Asynchronous LLM Agents (Slow)
+    # 2. Asynchronous LLM Agents (Parallelized)
     if target_breaks > 0:
         background_tasks.add_task(process_swarm_in_background, breaks)
     
