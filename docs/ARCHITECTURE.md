@@ -7,28 +7,28 @@ Breakwater is a multi-agent autonomous reconciliation system designed to process
 Data feeds (Ledger and Processor CSVs) are ingested via a dedicated file-upload FastAPI endpoint. To bypass serverless HTTP timeouts while handling massive scale, the system employs a **Parallelized ThreadPool Orchestrator** to manage the AI swarm asynchronously.
 
 ```
-> Data feeds (Ledger CSV + Processor CSV)
->        |
->        v
-> FastAPI POST /upload_and_reconcile (Instant 202 Accepted)
->        |
->        v
-> Deterministic Matcher (Resolves ~90% of records in <1s via Pandas)
->        |
->        v
-> ThreadPool Orchestrator (10 Concurrent Workers for the 10% "breaks")
->        |
->        v
-> Agent Swarm (Investigator -> Severity Tagger -> Resolver)
->        |
->        +---------------------+
->        v                     v
->   Audit log (Firestore)   Human reviewer
->   full reasoning trail    ambiguous escalation
->        |                     |
->        +----------+----------+
->                   v
->     Dashboard (Vanilla JS Polling) & Auditor CSV Export
+ Data feeds (Ledger CSV + Processor CSV)
+        |
+        v
+ FastAPI POST /upload_and_reconcile (Instant 202 Accepted)
+        |
+        v
+ Deterministic Matcher (Resolves ~90% of records in <1s via Pandas)
+        |
+        v
+ ThreadPool Orchestrator (10 Concurrent Workers for the 10% "breaks")
+        |
+        v
+ Agent Swarm (Investigator -> Severity Tagger -> Resolver)
+        |
+        +---------------------+
+        v                     v
+   Audit log (Firestore)   Human reviewer
+   full reasoning trail    ambiguous escalation
+        |                     |
+        +----------+----------+
+                   v
+     Dashboard (Vanilla JS Polling) & Auditor CSV Export
 
 ```
 ## Agent Swarm & Model Selection
