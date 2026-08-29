@@ -1,3 +1,32 @@
+async function fetchUpdates() {
+    try {
+        const [statsRes, breaksRes] = await Promise.all([
+            fetch('/stats'),
+            fetch('/breaks')
+        ]);
+        
+        const stats = await statsRes.json();
+        const breaks = await breaksRes.json();
+        
+        updateStats(stats);
+        updateTable(breaks);
+
+        // Stop polling when total breaks match processed count
+        const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
+        if (stats.breaks_found > 0 && totalProcessed >= stats.breaks_found) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            document.getElementById('live-indicator').style.display = 'none';
+            const btn = document.getElementById('run-btn');
+            btn.disabled = false;
+            btn.innerText = "Run Reconciliation";
+        }
+    } catch (err) {
+        console.error("Error fetching live data", err);
+    }
+}
+
+You, Now
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,9 +71,9 @@
 
         .details-row { display: none; background: #f8fafc; }
         .details-row.open { display: table-row; }
-        .details-content { padding: 1.5rem; }
-        .details-content h4 { margin-bottom: 0.5rem; font-size: 0.875rem; color: var(--primary); }
-        .details-content p { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5; }
+        .details-content { padding: 1.25rem; background: #ffffff; border: 1px solid var(--border); border-radius: 6px; margin: 0.5rem 0; }
+        .details-content h4 { margin-bottom: 0.5rem; font-size: 0.875rem; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .details-content p { font-size: 0.875rem; color: var(--text); margin-bottom: 0.4rem; line-height: 1.4; }
         
         #live-indicator { display: none; align-items: center; gap: 0.5rem; color: var(--low); font-size: 0.875rem; font-weight: 600; }
         .dot { width: 8px; height: 8px; background: var(--low); border-radius: 50%; animation: pulse 1.5s infinite; }
@@ -87,7 +116,7 @@
                     <th>Record ID</th>
                     <th>Break Type</th>
                     <th>Amount</th>
-                    <th>Severity (Gemma)</th>
+                    <th>Severity (Gemma 4)</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -110,7 +139,6 @@
                 document.getElementById('live-indicator').style.display = 'flex';
                 btn.innerText = "Processing in Background...";
                 
-                // Start polling every 2 seconds
                 if (!pollInterval) {
                     pollInterval = setInterval(fetchUpdates, 2000);
                 }
@@ -122,94 +150,109 @@
         }
 
         async function fetchUpdates() {
-    try {
-        const [statsRes, breaksRes] = await Promise.all([
-            fetch('/stats'),
-            fetch('/breaks')
-        ]);
-        
-        const stats = await statsRes.json();
-        const breaks = await breaksRes.json();
-        
-        updateStats(stats);
-        updateTable(breaks);
+            try {
+                const [statsRes, breaksRes] = await Promise.all([
+                    fetch('/stats'),
+                    fetch('/breaks')
+                ]);
+                
+                const stats = await statsRes.json();
+                const breaks = await breaksRes.json();
+                
+                updateStats(stats);
+                updateTable(breaks);
 
-        // Stop polling when total breaks match processed count
-        const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
-        if (stats.breaks_found > 0 && totalProcessed >= stats.breaks_found) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-            document.getElementById('live-indicator').style.display = 'none';
-            const btn = document.getElementById('run-btn');
-            btn.disabled = false;
-            btn.innerText = "Run Reconciliation";
+                const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
+                if (stats.breaks_found > 0 && totalProcessed >= stats.breaks_found) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    document.getElementById('live-indicator').style.display = 'none';
+                    const btn = document.getElementById('run-btn');
+                    btn.disabled = false;
+                    btn.innerText = "Run Reconciliation";
+                }
+            } catch (err) {
+                console.error("Error fetching live data", err);
+            }
         }
-    } catch (err) {
-        console.error("Error fetching live data", err);
-    }
-}
 
         function updateStats(stats) {
-            document.getElementById('stat-matched').innerText = stats.auto_matched || 0;
-            document.getElementById('stat-breaks').innerText = stats.breaks_found || 0;
-            document.getElementById('stat-resolved').innerText = stats.auto_resolved || 0;
-            document.getElementById('stat-escalated').innerText = stats.escalated || 0;
+            document.getElementById('stat-matched').innerText = (stats.auto_matched || 0).toLocaleString();
+            document.getElementById('stat-breaks').innerText = (stats.breaks_found || 0).toLocaleString();
+            document.getElementById('stat-resolved').innerText = (stats.auto_resolved || 0).toLocaleString();
+            document.getElementById('stat-escalated').innerText = (stats.escalated || 0).toLocaleString();
+        }
+
+        function getVal(obj, key) {
+            if (!obj) return null;
+            if (Array.isArray(obj)) return obj[0] ? obj[0][key] : null;
+            return obj[key];
         }
 
         function updateTable(breaks) {
-    const tbody = document.getElementById('table-body');
-    tbody.innerHTML = '';
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
 
-    breaks.forEach(br => {
-        // Extract values from ledger or processor fallback
-        const ledger = br.ledger || {};
-        const processor = br.processor || {};
-        
-        const recordId = br.transaction_id || ledger.transaction_id || processor.transaction_id || 'N/A';
-        const rawAmount = ledger.amount || processor.amount || '0.00';
-        const formattedAmount = `$${parseFloat(rawAmount).toFixed(2)}`;
+            breaks.forEach(br => {
+                const ledger = br.ledger || {};
+                const processor = br.processor || {};
+                
+                const recordId = br.transaction_id || getVal(ledger, 'transaction_id') || getVal(processor, 'transaction_id') || 'N/A';
+                
+                // Safe numeric resolution for amounts
+                const rawAmount = br.amount ?? getVal(ledger, 'amount') ?? getVal(processor, 'amount') ?? 0;
+                const numAmount = parseFloat(rawAmount);
+                const formattedAmount = isNaN(numAmount) ? '$0.00' : `$${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-        const severity = br.investigation?.severity || 'unknown';
-        const status = br.resolution?.status || 'processing';
-        const breakType = br.investigation?.break_type || 'unclassified';
-        
-        // Main visible row
-        const tr = document.createElement('tr');
-        tr.className = 'main-row';
-        tr.onclick = () => toggleDetails(recordId);
-        tr.innerHTML = `
-            <td><strong>${recordId}</strong></td>
-            <td>${breakType.replace('_', ' ').toUpperCase()}</td>
-            <td>${formattedAmount}</td>
-            <td><span class="badge severity-${severity}">${severity}</span></td>
-            <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
-        `;
+                const severity = br.investigation?.severity || 'unknown';
+                const status = br.resolution?.status || 'processing';
+                const breakType = br.investigation?.break_type || br.break_type || 'unclassified';
+                const agentSource = br.investigation?.source || 'Gemini Flash-Lite';
 
-        // Expandable reasoning panel (proves AI agents worked)
-        const detailsTr = document.createElement('tr');
-        detailsTr.id = `details-${recordId}`;
-        detailsTr.className = 'details-row';
-        detailsTr.innerHTML = `
-            <td colspan="5">
-                <div class="details-content">
-                    <p><strong>Agent Source:</strong> ${br.investigation?.source || 'Gemini LLM Swarm'}</p>
-                    <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'}</p>
-                    <p><strong>Confidence:</strong> ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%</p>
-                    <p><strong>Action Narrative:</strong> ${br.resolution?.narrative || 'Pending agent action...'}</p>
-                </div>
-            </td>
-        `;
+                // Action narrative fallback handling
+                let actionNarrative = br.resolution?.narrative || 'Pending agent action...';
+                if (status === 'escalated' && actionNarrative === 'Pending agent action...') {
+                    if (br.resolution?.packet) {
+                        actionNarrative = `Escalated to Operations queue (Confidence ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%).`;
+                    }
+                }
 
-        tbody.appendChild(tr);
-        tbody.appendChild(detailsTr);
-    });
-}
+                const tr = document.createElement('tr');
+                tr.className = 'main-row';
+                tr.onclick = () => toggleDetails(recordId);
+                tr.innerHTML = `
+                    <td><strong>${recordId}</strong></td>
+                    <td>${breakType.replace('_', ' ').toUpperCase()}</td>
+                    <td>${formattedAmount}</td>
+                    <td><span class="badge severity-${severity}">${severity}</span></td>
+                    <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
+                `;
+
+                const detailsTr = document.createElement('tr');
+                detailsTr.id = `details-${recordId}`;
+                detailsTr.className = 'details-row';
+                detailsTr.innerHTML = `
+                    <td colspan="5">
+                        <div class="details-content">
+                            <h4>Agent Audit Trail & Reasoning</h4>
+                            <p><strong>Intelligence Layer:</strong> ${agentSource}</p>
+                            <p><strong>Investigator Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'}</p>
+                            <p><strong>Model Confidence:</strong> ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%</p>
+                            <p><strong>Resolver Action:</strong> ${actionNarrative}</p>
+                        </div>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+                tbody.appendChild(detailsTr);
+            });
+        }
+
         function toggleDetails(id) {
             const row = document.getElementById(`details-${id}`);
             if (row) row.classList.toggle('open');
         }
 
-        // Fetch initial state on page load
         fetchUpdates();
     </script>
 </body>
