@@ -59,7 +59,7 @@ def _safe_process(br):
         print(f"[Swarm Error] Failed processing break: {e}")
 
 def process_swarm_in_background(breaks):
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         executor.map(_safe_process, breaks)
     print("[Swarm] All background processing completed.")
 
