@@ -122,23 +122,32 @@
         }
 
         async function fetchUpdates() {
-            try {
-                const [statsRes, breaksRes] = await Promise.all([
-                    fetch('/stats'),
-                    fetch('/breaks')
-                ]);
-                
-                const stats = await statsRes.json();
-                const breaks = await breaksRes.json();
-                
-                updateStats(stats);
-                updateTable(breaks);
+    try {
+        const [statsRes, breaksRes] = await Promise.all([
+            fetch('/stats'),
+            fetch('/breaks')
+        ]);
+        
+        const stats = await statsRes.json();
+        const breaks = await breaksRes.json();
+        
+        updateStats(stats);
+        updateTable(breaks);
 
-                // Optional logic to stop polling if pipeline finishes (e.g., matching known target length)
-            } catch (err) {
-                console.error("Error fetching live data", err);
-            }
+        // Stop polling when total breaks match processed count
+        const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
+        if (stats.breaks_found > 0 && totalProcessed >= stats.breaks_found) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            document.getElementById('live-indicator').style.display = 'none';
+            const btn = document.getElementById('run-btn');
+            btn.disabled = false;
+            btn.innerText = "Run Reconciliation";
         }
+    } catch (err) {
+        console.error("Error fetching live data", err);
+    }
+}
 
         function updateStats(stats) {
             document.getElementById('stat-matched').innerText = stats.auto_matched || 0;
