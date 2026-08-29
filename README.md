@@ -80,8 +80,9 @@ breakwater/
     └── BUILD_PLAN.md        # Hackathon build log
 ```
 
-## 🎥 Note for Judges: How to Evaluate the Demo
-1. **The UI:** Notice the enterprise-grade CSV file ingestion and dynamic browser-native currency formatting (USD, EUR, GBP, INR).
-2. **The Speed:** The system clears exact matches instantly, and resolves the remaining AI breaks asynchronously via a parallelized thread pool.
-3. **The Explainability:** Click any row in the UI to expand the **Agent Audit Trail**. You will see exactly which model made the decision, its confidence score, and the one-sentence accounting narrative it generated. 
-4. **The Output:** Click **Download Audit Report** to generate the final CSV file that a real-world financial controller would hand to compliance auditors.
+## 🎥 Note for Judges: How to Test the Application Live
+1. **Get the Test Data:** Navigate to the `data/` folder in this repository and download the provided `ledger.csv` and `processor.csv` test files. 
+2. **Upload the Files:** Open the live application URL (or your local `http://localhost:8080`). Drag and drop the downloaded CSV files into their respective upload fields.
+3. **Run the Reconciliation:** Click **Upload & Reconcile**. Notice how the deterministic matching engine clears identical records instantly, while the parallelized AI swarm processes the remaining breaks asynchronously.
+4. **Inspect the AI Reasoning:** Click on any populated row in the UI to expand the **Agent Audit Trail**. You will see exactly which Vertex AI model made the decision, its confidence score, and the one-sentence accounting narrative it generated. 
+5. **Export the Audit Log:** Click **Download Audit Report** to generate the final CSV file that a real-world financial controller would hand to compliance auditors.
