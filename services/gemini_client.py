@@ -2,18 +2,17 @@ import json
 import os
 
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 _client = None
 if PROJECT_ID:
     try:
         from google import genai
         
-        # Add vertexai=True to route to Google Cloud instead of AI Studio
         _client = genai.Client(
             vertexai=True,
             project=PROJECT_ID,
-            location="us-central1" 
+            location="us"  # CHANGED from us-central1
         )
         print(f"[gemini_client] Successfully initialized GenAI Vertex client for {PROJECT_ID}")
     except Exception as e:
