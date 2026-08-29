@@ -19,8 +19,8 @@
         .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover:not(:disabled) { background: var(--primary-hover); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .btn-danger { background: var(--high); }
-        .btn-danger:hover:not(:disabled) { background: #dc2626; }
+        .btn-danger { background: var(--surface); color: var(--high); border: 1px solid var(--border); }
+        .btn-danger:hover:not(:disabled) { background: #fee2e2; }
         
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -58,10 +58,10 @@
     <div class="header">
         <div>
             <h1>Breakwater Dashboard</h1>
-            <div id="live-indicator"><div class="dot"></div>Live Polling Active</div>
+            <div id="live-indicator"><div class="dot"></div>Processing AI Agents...</div>
         </div>
-        <div>
-            <button id="reset-btn" class="btn btn-danger" style="margin-right: 10px;" onclick="resetSystem()">Reset Data</button>
+        <div style="display: flex; gap: 10px;">
+            <button id="reset-btn" class="btn btn-danger" onclick="resetSystem()">Wipe Database</button>
             <button id="run-btn" class="btn" onclick="triggerReconciliation()">Run Reconciliation</button>
         </div>
     </div>
@@ -76,11 +76,11 @@
             <div class="stat-value" id="stat-breaks">0</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">Auto-Resolved</div>
+            <div class="stat-title">AI Auto-Resolved</div>
             <div class="stat-value" id="stat-resolved">0</div>
         </div>
         <div class="stat-card">
-            <div class="stat-title">Escalated</div>
+            <div class="stat-title">Human Escalated</div>
             <div class="stat-value" id="stat-escalated">0</div>
         </div>
     </div>
@@ -101,33 +101,45 @@
         </table>
     </div>
 
-    <script>
+<script>
         let pollInterval = null;
+        let targetBreaks = 0;
+        let matchedCount = 0;
 
         async function resetSystem() {
-            if (confirm("Stop processing and wipe all current audit data?")) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = null;
-                document.getElementById('live-indicator').style.display = 'none';
-                
-                const btn = document.getElementById('run-btn');
-                btn.disabled = false;
-                btn.innerText = "Run Reconciliation";
-                
-                await fetch('/reset', { method: 'POST' });
-                fetchUpdates(); // Will clear the table immediately
-            }
+            if (pollInterval) clearInterval(pollInterval);
+            document.getElementById('live-indicator').style.display = 'none';
+            document.getElementById('run-btn').disabled = false;
+            document.getElementById('run-btn').innerText = "Run Reconciliation";
+            
+            await fetch('/reset', { method: 'POST' });
+            
+            targetBreaks = 0;
+            matchedCount = 0;
+            document.getElementById('stat-matched').innerText = "0";
+            document.getElementById('stat-breaks').innerText = "0";
+            document.getElementById('stat-resolved').innerText = "0";
+            document.getElementById('stat-escalated').innerText = "0";
+            document.getElementById('table-body').innerHTML = "";
         }
 
         async function triggerReconciliation() {
             const btn = document.getElementById('run-btn');
             btn.disabled = true;
-            btn.innerText = "Triggering Swarm...";
+            btn.innerText = "Initializing Swarm...";
 
             try {
-                await fetch('/reconcile', { method: 'POST' });
+                const res = await fetch('/reconcile', { method: 'POST' });
+                const data = await res.json();
+                
+                targetBreaks = data.target_breaks || 0;
+                matchedCount = data.matched || 0;
+                
+                document.getElementById('stat-matched').innerText = matchedCount.toLocaleString();
+                document.getElementById('stat-breaks').innerText = targetBreaks.toLocaleString();
+
                 document.getElementById('live-indicator').style.display = 'flex';
-                btn.innerText = "Processing in Background...";
+                btn.innerText = "Agents Working...";
                 
                 if (!pollInterval) {
                     pollInterval = setInterval(fetchUpdates, 2000);
@@ -148,11 +160,15 @@
                 const stats = await statsRes.json();
                 const breaks = await breaksRes.json();
                 
-                updateStats(stats);
+                document.getElementById('stat-resolved').innerText = (stats.auto_resolved || 0).toLocaleString();
+                document.getElementById('stat-escalated').innerText = (stats.escalated || 0).toLocaleString();
+                
                 updateTable(breaks);
 
                 const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
-                if (stats.breaks_found > 0 && totalProcessed >= stats.breaks_found) {
+                
+                // Stop polling if we've processed all the breaks the Matcher detected
+                if (targetBreaks > 0 && totalProcessed >= targetBreaks) {
                     clearInterval(pollInterval);
                     pollInterval = null;
                     document.getElementById('live-indicator').style.display = 'none';
@@ -163,17 +179,24 @@
             } catch (err) { }
         }
 
-        function updateStats(stats) {
-            document.getElementById('stat-matched').innerText = (stats.auto_matched || 0).toLocaleString();
-            document.getElementById('stat-breaks').innerText = (stats.breaks_found || 0).toLocaleString();
-            document.getElementById('stat-resolved').innerText = (stats.auto_resolved || 0).toLocaleString();
-            document.getElementById('stat-escalated').innerText = (stats.escalated || 0).toLocaleString();
+        function extractAmount(br) {
+            // Highly aggressive parser to ensure we never show $0.00 if data exists
+            let raw = br.amount;
+            if (!raw && br.ledger && br.ledger.amount) raw = br.ledger.amount;
+            if (!raw && br.processor && br.processor.amount) raw = br.processor.amount;
+            if (Array.isArray(br.ledger) && br.ledger[0]?.amount) raw = br.ledger[0].amount;
+            if (Array.isArray(br.processor) && br.processor[0]?.amount) raw = br.processor[0].amount;
+            
+            const num = parseFloat(raw);
+            return isNaN(num) ? '$0.00' : `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         }
 
-        function getVal(obj, key) {
-            if (!obj) return null;
-            if (Array.isArray(obj)) return obj[0] ? obj[0][key] : null;
-            return obj[key];
+        function getRecordId(br) {
+            let id = br.transaction_id;
+            if (!id && br.ledger && !Array.isArray(br.ledger)) id = br.ledger.transaction_id;
+            if (!id && br.processor && !Array.isArray(br.processor)) id = br.processor.transaction_id;
+            if (!id && Array.isArray(br.ledger)) id = br.ledger[0]?.transaction_id;
+            return id || 'N/A';
         }
 
         function updateTable(breaks) {
@@ -181,14 +204,8 @@
             tbody.innerHTML = '';
 
             breaks.forEach(br => {
-                const ledger = br.ledger || {};
-                const processor = br.processor || {};
-                
-                const recordId = br.transaction_id || getVal(ledger, 'transaction_id') || getVal(processor, 'transaction_id') || 'N/A';
-                
-                const rawAmount = br.amount ?? getVal(ledger, 'amount') ?? getVal(processor, 'amount') ?? 0;
-                const numAmount = parseFloat(rawAmount);
-                const formattedAmount = isNaN(numAmount) ? '$0.00' : `$${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                const recordId = getRecordId(br);
+                const formattedAmount = extractAmount(br);
 
                 const severity = br.investigation?.severity || 'unknown';
                 const status = br.resolution?.status || 'processing';
@@ -235,8 +252,6 @@
             const row = document.getElementById(`details-${id}`);
             if (row) row.classList.toggle('open');
         }
-
-        fetchUpdates();
     </script>
 </body>
 </html>
