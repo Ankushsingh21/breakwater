@@ -31,28 +31,37 @@ async def get_dashboard_breaks():
 
 @app.post("/reset")
 async def reset_system():
-    """Wipes the database for a fresh run."""
     clear_db()
-    return {"status": "ok", "message": "Database wiped."}
-
-def process_and_publish():
-    """Background task to avoid blocking the UI."""
-    clear_db()
-    match_results = run_matcher()
-    breaks = match_results.get("breaks", [])
-    
-    if publisher and topic_path:
-        for br in breaks:
-            publisher.publish(topic_path, json.dumps(br).encode("utf-8"))
-    else:
-        for br in breaks:
-            process_single_break(br)
+    return {"status": "ok"}
 
 @app.post("/reconcile")
 async def trigger_reconciliation(background_tasks: BackgroundTasks):
-    """Instantly returns 202 Accepted, pushes heavy work to the background."""
-    background_tasks.add_task(process_and_publish)
-    return {"status": "processing", "message": "Swarm triggered asynchronously."}
+    """Wipes old data, runs deterministic matching instantly, and queues LLM agents."""
+    clear_db()
+    
+    # Run the Matcher instantly to get exact numbers for the UI
+    match_results = run_matcher()
+    breaks = match_results.get("breaks", [])
+    matched_count = len(match_results.get("matched", []))
+    target_breaks = len(breaks)
+
+    def fan_out():
+        if publisher and topic_path:
+            for br in breaks:
+                publisher.publish(topic_path, json.dumps(br).encode("utf-8"))
+        else:
+            for br in breaks:
+                process_single_break(br)
+
+    # Push the slow LLM processing to the background
+    background_tasks.add_task(fan_out)
+    
+    # Return the exact target metrics to the UI so it knows when to stop polling
+    return {
+        "status": "processing", 
+        "target_breaks": target_breaks,
+        "matched": matched_count
+    }
 
 @app.post("/process_break")
 async def pubsub_push_handler(request: Request):
