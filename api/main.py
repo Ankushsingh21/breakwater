@@ -51,7 +51,7 @@ def _safe_process(br):
         process_single_break(br)
         
         # 3. Rate Limit: 1-second pause per thread prevents Vertex AI Quota 429 Errors
-        time.sleep(1)
+        time.sleep(0.20)
         
     except Exception as e:
         print(f"[Swarm Error] Failed processing break: {e}")
