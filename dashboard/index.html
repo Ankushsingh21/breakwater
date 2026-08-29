@@ -4,41 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Breakwater | AI Reconciliation</title>
-    <!-- Add Chart.js for Visual Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root {
-            --bg: #f8fafc; --surface: #ffffff; --border: #e2e8f0;
-            --text: #0f172a; --text-muted: #64748b;
-            --primary: #2563eb; --primary-hover: #1d4ed8;
-            --low: #22c55e; --medium: #f59e0b; --high: #ef4444;
-        }
+        :root { --bg: #f8fafc; --surface: #ffffff; --border: #e2e8f0; --text: #0f172a; --text-muted: #64748b; --primary: #2563eb; --low: #22c55e; --medium: #f59e0b; --high: #ef4444; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body { background-color: var(--bg); color: var(--text); padding: 2rem; max-width: 1200px; margin: auto; }
-        
+        body { background: var(--bg); color: var(--text); padding: 2rem; max-width: 1200px; margin: auto; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
         .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-secondary { background: var(--surface); color: var(--primary); border: 1px solid var(--primary); }
-        .btn-hitl { background: #22c55e; color: white; padding: 0.5rem 1rem; margin-top: 1rem; font-size: 0.875rem; border: none; border-radius: 4px; cursor: pointer; }
-        
+        .btn-hitl { background: #22c55e; color: white; padding: 0.4rem 0.8rem; margin-top: 0.5rem; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
         .upload-panel { background: var(--surface); padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 2rem; display: flex; gap: 1rem; align-items: flex-end; }
         .upload-group { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
         .upload-group input { padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; }
-        
         .dashboard-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; margin-bottom: 2rem; }
         .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
-        .stat-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .stat-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; }
         .stat-title { color: var(--text-muted); font-size: 0.875rem; font-weight: 600; text-transform: uppercase; }
         .stat-value { font-size: 2rem; font-weight: 700; margin-top: 0.5rem; }
-        .chart-container { background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; }
-
+        .chart-container { background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; display: flex; justify-content: center; align-items: center; }
         .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th, td { padding: 1rem; border-bottom: 1px solid var(--border); }
+        th { background: #f1f5f9; font-weight: 600; color: var(--text-muted); font-size: 0.875rem; }
         tr.main-row { cursor: pointer; }
         tr.main-row:hover { background: #f8fafc; }
-        
         .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
         .badge.severity-low { background: #dcfce7; color: #166534; }
         .badge.severity-medium { background: #fef3c7; color: #92400e; }
@@ -46,17 +36,20 @@
         .badge.status-auto_resolved { background: #dcfce7; color: #166534; }
         .badge.status-manually_approved { background: #bfdbfe; color: #1e40af; }
         .badge.status-escalated { background: #fee2e2; color: #991b1b; }
-
-        .details-row { display: none; }
+        .details-row { display: none; background: #f8fafc; }
         .details-row.open { display: table-row; }
-        .details-content { padding: 1.25rem; background: #ffffff; border: 1px solid var(--border); margin: 0.5rem 0; border-radius: 6px; }
-        .details-content p { font-size: 0.875rem; margin-bottom: 0.4rem; }
+        .details-content { padding: 1.25rem; background: #ffffff; border: 1px solid var(--border); border-radius: 6px; margin: 0.5rem 0; }
+        #live-indicator { display: none; align-items: center; gap: 0.5rem; color: var(--low); font-size: 0.875rem; font-weight: 600; }
+        .dot { width: 8px; height: 8px; background: var(--low); border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     </style>
 </head>
 <body>
-
     <div class="header">
-        <h1>Breakwater Enterprise</h1>
+        <div>
+            <h1>Breakwater Enterprise</h1>
+            <div id="live-indicator"><div class="dot"></div>AI Swarm Processing...</div>
+        </div>
         <button class="btn btn-secondary" onclick="window.location.href='/export'">Download Audit Report</button>
     </div>
 
@@ -73,71 +66,85 @@
             <div class="stat-card"><div class="stat-title">AI Auto-Resolved</div><div class="stat-value" id="stat-resolved">0</div></div>
             <div class="stat-card"><div class="stat-title">Human Escalated</div><div class="stat-value" id="stat-escalated">0</div></div>
         </div>
-        <div class="chart-container">
-            <canvas id="resolutionChart" height="200"></canvas>
-        </div>
+        <div class="chart-container"><canvas id="resolutionChart" height="180"></canvas></div>
     </div>
 
     <div class="table-container">
         <table>
-            <thead><tr><th>Record ID</th><th>Break Type</th><th>Amount</th><th>Severity</th><th>Status</th></tr></thead>
+            <thead><tr><th>Record ID</th><th>Break Type</th><th>Amount</th><th>Severity (Gemma 4)</th><th>Status</th></tr></thead>
             <tbody id="table-body"></tbody>
         </table>
     </div>
 
     <script>
-        let pollInterval = null;
-        let chartInstance = null;
+        let pollInterval = null, targetBreaks = 0, chartInstance = null;
 
         function initChart() {
             const ctx = document.getElementById('resolutionChart').getContext('2d');
             chartInstance = new Chart(ctx, {
                 type: 'doughnut',
-                data: {
-                    labels: ['Auto-Resolved', 'Escalated', 'Human Approved'],
-                    datasets: [{ data: [0, 0, 0], backgroundColor: ['#22c55e', '#ef4444', '#3b82f6'] }]
-                },
+                data: { labels: ['Auto-Resolved', 'Escalated', 'Approved'], datasets: [{ data: [0, 0, 0], backgroundColor: ['#22c55e', '#ef4444', '#3b82f6'] }] },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
             });
         }
         initChart();
 
         async function triggerReconciliation() {
-            const f1 = document.getElementById('ledger-file').files[0];
-            const f2 = document.getElementById('processor-file').files[0];
+            const f1 = document.getElementById('ledger-file').files[0], f2 = document.getElementById('processor-file').files[0];
             if (!f1 || !f2) return alert("Select both CSV files.");
 
-            document.getElementById('run-btn').disabled = true;
+            const btn = document.getElementById('run-btn');
+            btn.disabled = true; btn.innerText = "Processing...";
             const fd = new FormData(); fd.append("ledger", f1); fd.append("processor", f2);
-            await fetch('/upload_and_reconcile', { method: 'POST', body: fd });
-            if (!pollInterval) pollInterval = setInterval(fetchUpdates, 2000);
+            document.getElementById('table-body').innerHTML = "";
+
+            try {
+                const res = await fetch('/upload_and_reconcile', { method: 'POST', body: fd });
+                const data = await res.json();
+                targetBreaks = data.target_breaks || 0;
+                
+                // Set true auto-matched count from server response
+                document.getElementById('stat-matched').innerText = (data.matched || 0).toLocaleString();
+                document.getElementById('stat-breaks').innerText = targetBreaks.toLocaleString();
+                document.getElementById('stat-resolved').innerText = "0";
+                document.getElementById('stat-escalated').innerText = "0";
+                document.getElementById('live-indicator').style.display = 'flex';
+
+                chartInstance.data.datasets[0].data = [0, 0, 0]; chartInstance.update();
+                if (pollInterval) clearInterval(pollInterval);
+                pollInterval = setInterval(fetchUpdates, 2000);
+            } catch (err) { alert("Failed to start reconciliation."); btn.disabled = false; btn.innerText = "Upload & Reconcile"; }
         }
 
         async function overrideBreak(id) {
             await fetch('/override', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transaction_id: id, status: 'manually_approved', narrative: 'Human reviewer reviewed AI packet and manually approved resolution.' })
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transaction_id: id, status: 'manually_approved', narrative: 'Human reviewer approved resolution.' })
             });
             fetchUpdates();
-            alert("Break manually approved and recorded in audit trail.");
         }
 
         async function fetchUpdates() {
             try {
                 const [sRes, bRes] = await Promise.all([fetch('/stats'), fetch('/breaks')]);
-                const stats = await sRes.json();
-                const breaks = await bRes.json();
-                
-                document.getElementById('stat-matched').innerText = stats.auto_matched.toLocaleString();
-                document.getElementById('stat-breaks').innerText = stats.breaks_found.toLocaleString();
-                document.getElementById('stat-resolved').innerText = stats.auto_resolved.toLocaleString();
-                document.getElementById('stat-escalated').innerText = stats.escalated.toLocaleString();
-                
-                chartInstance.data.datasets[0].data = [stats.auto_resolved, stats.escalated, stats.manually_approved];
+                const stats = await sRes.json(), breaks = await bRes.json();
+
+                document.getElementById('stat-resolved').innerText = (stats.auto_resolved || 0).toLocaleString();
+                document.getElementById('stat-escalated').innerText = (stats.escalated || 0).toLocaleString();
+
+                const approved = stats.manually_approved || 0;
+                chartInstance.data.datasets[0].data = [stats.auto_resolved || 0, stats.escalated || 0, approved];
                 chartInstance.update();
 
                 updateTable(breaks);
+
+                const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0) + approved;
+                if (targetBreaks > 0 && totalProcessed >= targetBreaks) {
+                    clearInterval(pollInterval); pollInterval = null;
+                    document.getElementById('live-indicator').style.display = 'none';
+                    const btn = document.getElementById('run-btn');
+                    btn.disabled = false; btn.innerText = "Upload & Reconcile";
+                }
             } catch (err) {}
         }
 
@@ -150,30 +157,23 @@
             const tbody = document.getElementById('table-body');
             tbody.innerHTML = '';
             breaks.forEach(br => {
-                const l = br.ledger || {};
-                const p = br.processor || {};
-                const rId = br.transaction_id || getVal(l, 'transaction_id') || 'N/A';
-                const amt = parseFloat(br.amount ?? getVal(l, 'amount') ?? 0);
-                const cur = getVal(l, 'currency') || 'USD';
+                const l = br.ledger || {}, p = br.processor || {};
+                const rId = br.transaction_id || getVal(l, 'transaction_id') || getVal(p, 'transaction_id') || 'N/A';
+                const amt = parseFloat(br.amount ?? getVal(l, 'amount') ?? getVal(p, 'amount') ?? 0);
+                const cur = getVal(l, 'currency') || getVal(p, 'currency') || 'USD';
                 const fAmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: cur }).format(amt);
-                const sev = br.investigation?.severity || 'unknown';
-                const stat = br.resolution?.status || 'processing';
+                const sev = br.investigation?.severity || 'unknown', stat = br.resolution?.status || 'processing';
 
                 const tr = document.createElement('tr');
                 tr.className = 'main-row';
-                tr.onclick = () => document.getElementById(`det-${rId}`).classList.toggle('open');
-                tr.innerHTML = `<td><strong>${rId}</strong></td><td>${br.investigation?.break_type || 'unknown'}</td><td>${fAmt}</td>
-                                <td><span class="badge severity-${sev}">${sev}</span></td><td><span class="badge status-${stat}">${stat.replace('_', ' ')}</span></td>`;
-                
+                tr.onclick = () => { const el = document.getElementById(`det-${rId}`); if(el) el.classList.toggle('open'); };
+                tr.innerHTML = `<td><strong>${rId}</strong></td><td>${(br.investigation?.break_type || 'unknown').replace('_', ' ').toUpperCase()}</td><td>${fAmt}</td><td><span class="badge severity-${sev}">${sev}</span></td><td><span class="badge status-${stat}">${stat.replace('_', ' ')}</span></td>`;
+
+                const btnHTML = stat === 'escalated' ? `<button class="btn-hitl" onclick="overrideBreak('${rId}')">Approve Resolution (HITL Override)</button>` : '';
                 const dTr = document.createElement('tr');
                 dTr.id = `det-${rId}`; dTr.className = 'details-row';
-                const btnHTML = stat === 'escalated' ? `<button class="btn-hitl" onclick="overrideBreak('${rId}')">Approve Resolution (HITL)</button>` : '';
-                dTr.innerHTML = `<td colspan="5"><div class="details-content">
-                    <p><strong>Intelligence Layer:</strong> ${br.investigation?.source || 'Gemini'}</p>
-                    <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'N/A'}</p>
-                    <p><strong>Resolver Action:</strong> ${br.resolution?.narrative || 'Pending'}</p>
-                    ${btnHTML}
-                </div></td>`;
+                dTr.innerHTML = `<td colspan="5"><div class="details-content"><p><strong>Intelligence Layer:</strong> ${br.investigation?.source || 'Gemini'}</p><p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'N/A'}</p><p><strong>Resolver Action:</strong> ${br.resolution?.narrative || 'Pending'}</p>${btnHTML}</div></td>`;
+
                 tbody.appendChild(tr); tbody.appendChild(dTr);
             });
         }
