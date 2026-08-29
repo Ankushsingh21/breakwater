@@ -1,32 +1,3 @@
-async function fetchUpdates() {
-    try {
-        const [statsRes, breaksRes] = await Promise.all([
-            fetch('/stats'),
-            fetch('/breaks')
-        ]);
-        
-        const stats = await statsRes.json();
-        const breaks = await breaksRes.json();
-        
-        updateStats(stats);
-        updateTable(breaks);
-
-        // Stop polling when total breaks match processed count
-        const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
-        if (stats.breaks_found > 0 && totalProcessed >= stats.breaks_found) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-            document.getElementById('live-indicator').style.display = 'none';
-            const btn = document.getElementById('run-btn');
-            btn.disabled = false;
-            btn.innerText = "Run Reconciliation";
-        }
-    } catch (err) {
-        console.error("Error fetching live data", err);
-    }
-}
-
-You, Now
 <!DOCTYPE html>
 <html lang="en">
 <head>
