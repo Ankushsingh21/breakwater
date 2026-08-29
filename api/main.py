@@ -34,6 +34,8 @@ def process_swarm_in_background(breaks):
     for br in breaks:
         try:
             process_single_break(br)
+            # Add a 0.5s pause to stay under Vertex AI Free Tier quotas
+            time.sleep(0.5)
         except Exception as e:
             print(f"[Swarm Error] Failed processing break: {e}")
 
@@ -102,13 +104,3 @@ async def export_csv():
         media_type="text/csv", 
         headers={"Content-Disposition": "attachment; filename=reconciliation_audit_report.csv"}
     )
-
-def process_swarm_in_background(breaks):
-    """Runs the LLM agents natively in the background thread."""
-    for br in breaks:
-        try:
-            process_single_break(br)
-            # Add a 0.5s pause to stay under Vertex AI Free Tier quotas
-            time.sleep(0.5)
-        except Exception as e:
-            print(f"[Swarm Error] Failed processing break: {e}")
