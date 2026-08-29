@@ -1,7 +1,7 @@
 import os
 import json
 import base64
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from google.cloud import pubsub_v1
 
@@ -29,23 +29,30 @@ async def get_dashboard_stats():
 async def get_dashboard_breaks():
     return get_all_breaks()
 
-@app.post("/reconcile")
-async def trigger_reconciliation():
-    """1. Clears old data. 2. Matches records. 3. Fans out to Pub/Sub."""
-    clear_db()  # Wipes the old $0.00 records from previous runs
-    
+@app.post("/reset")
+async def reset_system():
+    """Wipes the database for a fresh run."""
+    clear_db()
+    return {"status": "ok", "message": "Database wiped."}
+
+def process_and_publish():
+    """Background task to avoid blocking the UI."""
+    clear_db()
     match_results = run_matcher()
     breaks = match_results.get("breaks", [])
     
     if publisher and topic_path:
         for br in breaks:
             publisher.publish(topic_path, json.dumps(br).encode("utf-8"))
-        
-        return {"status": "processing", "message": f"Fanned out {len(breaks)} breaks."}
     else:
         for br in breaks:
             process_single_break(br)
-        return {"status": "processed_locally"}
+
+@app.post("/reconcile")
+async def trigger_reconciliation(background_tasks: BackgroundTasks):
+    """Instantly returns 202 Accepted, pushes heavy work to the background."""
+    background_tasks.add_task(process_and_publish)
+    return {"status": "processing", "message": "Swarm triggered asynchronously."}
 
 @app.post("/process_break")
 async def pubsub_push_handler(request: Request):
