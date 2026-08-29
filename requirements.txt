@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+pandas
 google-generativeai
 google-adk
 google-cloud-aiplatform>=1.79.0
