@@ -1,6 +1,5 @@
 import os
 
-# Legitimate serverless Gemma 4 model via Vertex AI MaaS
 GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma-4-26b-a4b-it-maas")
 _PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
@@ -8,11 +7,10 @@ _client = None
 if _PROJECT:
     try:
         from google import genai
-        # vertexai=True routes to Google Cloud securely
         _client = genai.Client(
             vertexai=True,
             project=_PROJECT,
-            location="us-central1"
+            location="global"  # CHANGED from us-central1
         )
         print(f"[gemma_client] Successfully initialized GenAI Vertex client")
     except Exception as e:
