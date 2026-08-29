@@ -74,9 +74,7 @@ def get_stats():
     escalated = sum(1 for b in breaks if b.get("resolution", {}).get("status") == "escalated")
     manually_approved = sum(1 for b in breaks if b.get("resolution", {}).get("status") == "manually_approved")
     
-    auto_matched = 46897 if len(breaks) > 0 else 0
     return {
-        "auto_matched": auto_matched,
         "breaks_found": len(breaks),
         "auto_resolved": resolved,
         "escalated": escalated,
