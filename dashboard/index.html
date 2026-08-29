@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Breakwater | AI Reconciliation</title>
+    <!-- Add Chart.js for Visual Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg: #f8fafc; --surface: #ffffff; --border: #e2e8f0;
@@ -15,28 +17,26 @@
         body { background-color: var(--bg); color: var(--text); padding: 2rem; max-width: 1200px; margin: auto; }
         
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-        .header h1 { font-size: 1.5rem; }
-        .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-        .btn:hover:not(:disabled) { background: var(--primary-hover); }
+        .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-secondary { background: var(--surface); color: var(--primary); border: 1px solid var(--primary); }
-        .btn-secondary:hover:not(:disabled) { background: #eff6ff; }
+        .btn-hitl { background: #22c55e; color: white; padding: 0.5rem 1rem; margin-top: 1rem; font-size: 0.875rem; border: none; border-radius: 4px; cursor: pointer; }
         
         .upload-panel { background: var(--surface); padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 2rem; display: flex; gap: 1rem; align-items: flex-end; }
         .upload-group { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
-        .upload-group label { font-size: 0.875rem; font-weight: 600; }
         .upload-group input { padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; }
         
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .dashboard-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; margin-bottom: 2rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
         .stat-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .stat-title { color: var(--text-muted); font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-title { color: var(--text-muted); font-size: 0.875rem; font-weight: 600; text-transform: uppercase; }
         .stat-value { font-size: 2rem; font-weight: 700; margin-top: 0.5rem; }
-        
-        .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .chart-container { background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; }
+
+        .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th, td { padding: 1rem; border-bottom: 1px solid var(--border); }
-        th { background: #f1f5f9; font-weight: 600; color: var(--text-muted); font-size: 0.875rem; }
-        tr.main-row { cursor: pointer; transition: background 0.1s; }
+        tr.main-row { cursor: pointer; }
         tr.main-row:hover { background: #f8fafc; }
         
         .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
@@ -44,228 +44,138 @@
         .badge.severity-medium { background: #fef3c7; color: #92400e; }
         .badge.severity-high { background: #fee2e2; color: #991b1b; }
         .badge.status-auto_resolved { background: #dcfce7; color: #166534; }
+        .badge.status-manually_approved { background: #bfdbfe; color: #1e40af; }
         .badge.status-escalated { background: #fee2e2; color: #991b1b; }
 
-        .details-row { display: none; background: #f8fafc; }
+        .details-row { display: none; }
         .details-row.open { display: table-row; }
-        .details-content { padding: 1.25rem; background: #ffffff; border: 1px solid var(--border); border-radius: 6px; margin: 0.5rem 0; }
-        .details-content h4 { margin-bottom: 0.5rem; font-size: 0.875rem; color: var(--primary); text-transform: uppercase; }
-        .details-content p { font-size: 0.875rem; color: var(--text); margin-bottom: 0.4rem; line-height: 1.4; }
-        
-        #live-indicator { display: none; align-items: center; gap: 0.5rem; color: var(--low); font-size: 0.875rem; font-weight: 600; margin-top: 0.5rem; }
-        .dot { width: 8px; height: 8px; background: var(--low); border-radius: 50%; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .details-content { padding: 1.25rem; background: #ffffff; border: 1px solid var(--border); margin: 0.5rem 0; border-radius: 6px; }
+        .details-content p { font-size: 0.875rem; margin-bottom: 0.4rem; }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <div>
-            <h1>Breakwater Enterprise</h1>
-            <div id="live-indicator"><div class="dot"></div>AI Swarm Processing...</div>
-        </div>
-        <div>
-            <button class="btn btn-secondary" onclick="exportReport()">Download Audit Report</button>
-        </div>
+        <h1>Breakwater Enterprise</h1>
+        <button class="btn btn-secondary" onclick="window.location.href='/export'">Download Audit Report</button>
     </div>
 
     <div class="upload-panel">
-        <div class="upload-group">
-            <label for="ledger-file">Ledger Data (CSV)</label>
-            <input type="file" id="ledger-file" accept=".csv">
-        </div>
-        <div class="upload-group">
-            <label for="processor-file">Processor Data (CSV)</label>
-            <input type="file" id="processor-file" accept=".csv">
-        </div>
+        <div class="upload-group"><label>Ledger Data (CSV)</label><input type="file" id="ledger-file" accept=".csv"></div>
+        <div class="upload-group"><label>Processor Data (CSV)</label><input type="file" id="processor-file" accept=".csv"></div>
         <button id="run-btn" class="btn" onclick="triggerReconciliation()">Upload & Reconcile</button>
     </div>
 
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-title">Auto-Matched</div>
-            <div class="stat-value" id="stat-matched">0</div>
+    <div class="dashboard-layout">
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-title">Auto-Matched</div><div class="stat-value" id="stat-matched">0</div></div>
+            <div class="stat-card"><div class="stat-title">Breaks Detected</div><div class="stat-value" id="stat-breaks">0</div></div>
+            <div class="stat-card"><div class="stat-title">AI Auto-Resolved</div><div class="stat-value" id="stat-resolved">0</div></div>
+            <div class="stat-card"><div class="stat-title">Human Escalated</div><div class="stat-value" id="stat-escalated">0</div></div>
         </div>
-        <div class="stat-card">
-            <div class="stat-title">Breaks Detected</div>
-            <div class="stat-value" id="stat-breaks">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-title">AI Auto-Resolved</div>
-            <div class="stat-value" id="stat-resolved">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-title">Human Escalated</div>
-            <div class="stat-value" id="stat-escalated">0</div>
+        <div class="chart-container">
+            <canvas id="resolutionChart" height="200"></canvas>
         </div>
     </div>
 
     <div class="table-container">
         <table>
-            <thead>
-                <tr>
-                    <th>Record ID</th>
-                    <th>Break Type</th>
-                    <th>Amount</th>
-                    <th>Severity (Gemma 4)</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody id="table-body">
-                <!-- Dynamic Data -->
-            </tbody>
+            <thead><tr><th>Record ID</th><th>Break Type</th><th>Amount</th><th>Severity</th><th>Status</th></tr></thead>
+            <tbody id="table-body"></tbody>
         </table>
     </div>
 
-<script>
+    <script>
         let pollInterval = null;
-        let targetBreaks = 0;
+        let chartInstance = null;
 
-        function exportReport() {
-            window.location.href = "/export";
+        function initChart() {
+            const ctx = document.getElementById('resolutionChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Auto-Resolved', 'Escalated', 'Human Approved'],
+                    datasets: [{ data: [0, 0, 0], backgroundColor: ['#22c55e', '#ef4444', '#3b82f6'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+            });
         }
+        initChart();
 
         async function triggerReconciliation() {
-            const ledgerFile = document.getElementById('ledger-file').files[0];
-            const processorFile = document.getElementById('processor-file').files[0];
-            
-            if (!ledgerFile || !processorFile) {
-                alert("Please select both the Ledger and Processor CSV files.");
-                return;
-            }
+            const f1 = document.getElementById('ledger-file').files[0];
+            const f2 = document.getElementById('processor-file').files[0];
+            if (!f1 || !f2) return alert("Select both CSV files.");
 
-            const btn = document.getElementById('run-btn');
-            btn.disabled = true;
-            btn.innerText = "Processing...";
+            document.getElementById('run-btn').disabled = true;
+            const fd = new FormData(); fd.append("ledger", f1); fd.append("processor", f2);
+            await fetch('/upload_and_reconcile', { method: 'POST', body: fd });
+            if (!pollInterval) pollInterval = setInterval(fetchUpdates, 2000);
+        }
 
-            const formData = new FormData();
-            formData.append("ledger", ledgerFile);
-            formData.append("processor", processorFile);
-
-            document.getElementById('table-body').innerHTML = "";
-            
-            try {
-                const res = await fetch('/upload_and_reconcile', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await res.json();
-                
-                targetBreaks = data.target_breaks || 0;
-                document.getElementById('stat-matched').innerText = (data.matched || 0).toLocaleString();
-                document.getElementById('stat-breaks').innerText = targetBreaks.toLocaleString();
-                document.getElementById('stat-resolved').innerText = "0";
-                document.getElementById('stat-escalated').innerText = "0";
-
-                document.getElementById('live-indicator').style.display = 'flex';
-                
-                if (!pollInterval) {
-                    pollInterval = setInterval(fetchUpdates, 2000);
-                }
-            } catch (err) {
-                alert("Failed to start reconciliation.");
-                btn.disabled = false;
-                btn.innerText = "Upload & Reconcile";
-            }
+        async function overrideBreak(id) {
+            await fetch('/override', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transaction_id: id, status: 'manually_approved', narrative: 'Human reviewer reviewed AI packet and manually approved resolution.' })
+            });
+            fetchUpdates();
+            alert("Break manually approved and recorded in audit trail.");
         }
 
         async function fetchUpdates() {
             try {
-                const [statsRes, breaksRes] = await Promise.all([
-                    fetch('/stats'),
-                    fetch('/breaks')
-                ]);
+                const [sRes, bRes] = await Promise.all([fetch('/stats'), fetch('/breaks')]);
+                const stats = await sRes.json();
+                const breaks = await bRes.json();
                 
-                const stats = await statsRes.json();
-                const breaks = await breaksRes.json();
+                document.getElementById('stat-matched').innerText = stats.auto_matched.toLocaleString();
+                document.getElementById('stat-breaks').innerText = stats.breaks_found.toLocaleString();
+                document.getElementById('stat-resolved').innerText = stats.auto_resolved.toLocaleString();
+                document.getElementById('stat-escalated').innerText = stats.escalated.toLocaleString();
                 
-                document.getElementById('stat-resolved').innerText = (stats.auto_resolved || 0).toLocaleString();
-                document.getElementById('stat-escalated').innerText = (stats.escalated || 0).toLocaleString();
-                
-                updateTable(breaks);
+                chartInstance.data.datasets[0].data = [stats.auto_resolved, stats.escalated, stats.manually_approved];
+                chartInstance.update();
 
-                const totalProcessed = (stats.auto_resolved || 0) + (stats.escalated || 0);
-                if (targetBreaks > 0 && totalProcessed >= targetBreaks) {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-                    document.getElementById('live-indicator').style.display = 'none';
-                    const btn = document.getElementById('run-btn');
-                    btn.disabled = false;
-                    btn.innerText = "Upload & Reconcile";
-                }
+                updateTable(breaks);
             } catch (err) {}
         }
 
         function getVal(obj, key) {
             if (!obj) return null;
-            if (Array.isArray(obj)) return obj[0] ? obj[0][key] : null;
-            return obj[key];
+            return Array.isArray(obj) ? (obj[0] ? obj[0][key] : null) : obj[key];
         }
 
         function updateTable(breaks) {
             const tbody = document.getElementById('table-body');
             tbody.innerHTML = '';
-
             breaks.forEach(br => {
-                const ledger = br.ledger || {};
-                const processor = br.processor || {};
-                
-                const recordId = br.transaction_id || getVal(ledger, 'transaction_id') || getVal(processor, 'transaction_id') || 'N/A';
-                
-                // Dynamic Currency Formatting
-                const rawAmount = br.amount ?? getVal(ledger, 'amount') ?? getVal(processor, 'amount') ?? 0;
-                const numAmount = parseFloat(rawAmount) || 0;
-                const currencyCode = getVal(ledger, 'currency') || getVal(processor, 'currency') || 'USD';
-                
-                const formattedAmount = new Intl.NumberFormat('en-US', { 
-                    style: 'currency', 
-                    currency: currencyCode 
-                }).format(numAmount);
-
-                const severity = br.investigation?.severity || 'unknown';
-                const status = br.resolution?.status || 'processing';
-                const breakType = br.investigation?.break_type || br.break_type || 'unclassified';
-                const agentSource = br.investigation?.source || 'Gemini Flash-Lite';
-
-                let actionNarrative = br.resolution?.narrative || 'Pending agent action...';
-                if (status === 'escalated' && actionNarrative === 'Pending agent action...') {
-                    actionNarrative = `Escalated to Operations queue (Confidence ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%).`;
-                }
+                const l = br.ledger || {};
+                const p = br.processor || {};
+                const rId = br.transaction_id || getVal(l, 'transaction_id') || 'N/A';
+                const amt = parseFloat(br.amount ?? getVal(l, 'amount') ?? 0);
+                const cur = getVal(l, 'currency') || 'USD';
+                const fAmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: cur }).format(amt);
+                const sev = br.investigation?.severity || 'unknown';
+                const stat = br.resolution?.status || 'processing';
 
                 const tr = document.createElement('tr');
                 tr.className = 'main-row';
-                tr.onclick = () => toggleDetails(recordId);
-                tr.innerHTML = `
-                    <td><strong>${recordId}</strong></td>
-                    <td>${breakType.replace('_', ' ').toUpperCase()}</td>
-                    <td>${formattedAmount}</td>
-                    <td><span class="badge severity-${severity}">${severity}</span></td>
-                    <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
-                `;
-
-                const detailsTr = document.createElement('tr');
-                detailsTr.id = `details-${recordId}`;
-                detailsTr.className = 'details-row';
-                detailsTr.innerHTML = `
-                    <td colspan="5">
-                        <div class="details-content">
-                            <h4>Agent Audit Trail & Reasoning</h4>
-                            <p><strong>Intelligence Layer:</strong> ${agentSource}</p>
-                            <p><strong>Investigator Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'}</p>
-                            <p><strong>Model Confidence:</strong> ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%</p>
-                            <p><strong>Resolver Action:</strong> ${actionNarrative}</p>
-                        </div>
-                    </td>
-                `;
-
-                tbody.appendChild(tr);
-                tbody.appendChild(detailsTr);
+                tr.onclick = () => document.getElementById(`det-${rId}`).classList.toggle('open');
+                tr.innerHTML = `<td><strong>${rId}</strong></td><td>${br.investigation?.break_type || 'unknown'}</td><td>${fAmt}</td>
+                                <td><span class="badge severity-${sev}">${sev}</span></td><td><span class="badge status-${stat}">${stat.replace('_', ' ')}</span></td>`;
+                
+                const dTr = document.createElement('tr');
+                dTr.id = `det-${rId}`; dTr.className = 'details-row';
+                const btnHTML = stat === 'escalated' ? `<button class="btn-hitl" onclick="overrideBreak('${rId}')">Approve Resolution (HITL)</button>` : '';
+                dTr.innerHTML = `<td colspan="5"><div class="details-content">
+                    <p><strong>Intelligence Layer:</strong> ${br.investigation?.source || 'Gemini'}</p>
+                    <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'N/A'}</p>
+                    <p><strong>Resolver Action:</strong> ${br.resolution?.narrative || 'Pending'}</p>
+                    ${btnHTML}
+                </div></td>`;
+                tbody.appendChild(tr); tbody.appendChild(dTr);
             });
-        }
-
-        function toggleDetails(id) {
-            const row = document.getElementById(`details-${id}`);
-            if (row) row.classList.toggle('open');
         }
     </script>
 </body>
