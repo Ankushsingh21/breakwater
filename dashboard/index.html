@@ -19,6 +19,8 @@
         .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover:not(:disabled) { background: var(--primary-hover); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-danger { background: var(--high); }
+        .btn-danger:hover:not(:disabled) { background: #dc2626; }
         
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
@@ -58,7 +60,10 @@
             <h1>Breakwater Dashboard</h1>
             <div id="live-indicator"><div class="dot"></div>Live Polling Active</div>
         </div>
-        <button id="run-btn" class="btn" onclick="triggerReconciliation()">Run Reconciliation</button>
+        <div>
+            <button id="reset-btn" class="btn btn-danger" style="margin-right: 10px;" onclick="resetSystem()">Reset Data</button>
+            <button id="run-btn" class="btn" onclick="triggerReconciliation()">Run Reconciliation</button>
+        </div>
     </div>
 
     <div class="stats-grid">
@@ -92,13 +97,27 @@
                 </tr>
             </thead>
             <tbody id="table-body">
-                <!-- Rows populated by JS -->
             </tbody>
         </table>
     </div>
 
     <script>
         let pollInterval = null;
+
+        async function resetSystem() {
+            if (confirm("Stop processing and wipe all current audit data?")) {
+                if (pollInterval) clearInterval(pollInterval);
+                pollInterval = null;
+                document.getElementById('live-indicator').style.display = 'none';
+                
+                const btn = document.getElementById('run-btn');
+                btn.disabled = false;
+                btn.innerText = "Run Reconciliation";
+                
+                await fetch('/reset', { method: 'POST' });
+                fetchUpdates(); // Will clear the table immediately
+            }
+        }
 
         async function triggerReconciliation() {
             const btn = document.getElementById('run-btn');
@@ -114,7 +133,6 @@
                     pollInterval = setInterval(fetchUpdates, 2000);
                 }
             } catch (err) {
-                console.error("Failed to trigger pipeline", err);
                 btn.disabled = false;
                 btn.innerText = "Run Reconciliation";
             }
@@ -142,9 +160,7 @@
                     btn.disabled = false;
                     btn.innerText = "Run Reconciliation";
                 }
-            } catch (err) {
-                console.error("Error fetching live data", err);
-            }
+            } catch (err) { }
         }
 
         function updateStats(stats) {
@@ -161,69 +177,60 @@
         }
 
         function updateTable(breaks) {
-    const tbody = document.getElementById('table-body');
-    tbody.innerHTML = '';
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
 
-    breaks.forEach(br => {
-        let ledger = br.ledger || {};
-        let processor = br.processor || {};
-        
-        if (Array.isArray(ledger)) ledger = ledger[0] || {};
-        if (Array.isArray(processor)) processor = processor[0] || {};
+            breaks.forEach(br => {
+                const ledger = br.ledger || {};
+                const processor = br.processor || {};
+                
+                const recordId = br.transaction_id || getVal(ledger, 'transaction_id') || getVal(processor, 'transaction_id') || 'N/A';
+                
+                const rawAmount = br.amount ?? getVal(ledger, 'amount') ?? getVal(processor, 'amount') ?? 0;
+                const numAmount = parseFloat(rawAmount);
+                const formattedAmount = isNaN(numAmount) ? '$0.00' : `$${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-        const recordId = br.transaction_id || ledger.transaction_id || processor.transaction_id || 'N/A';
-        
-        // Direct numerical fallback chain
-        let rawAmount = br.amount;
-        if (rawAmount === undefined || rawAmount === null) {
-            rawAmount = ledger.amount !== undefined ? ledger.amount : processor.amount;
+                const severity = br.investigation?.severity || 'unknown';
+                const status = br.resolution?.status || 'processing';
+                const breakType = br.investigation?.break_type || br.break_type || 'unclassified';
+                const agentSource = br.investigation?.source || 'Gemini Flash-Lite';
+
+                let actionNarrative = br.resolution?.narrative || 'Pending agent action...';
+                if (status === 'escalated' && actionNarrative === 'Pending agent action...') {
+                    actionNarrative = `Escalated to Operations queue (Confidence ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%).`;
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = 'main-row';
+                tr.onclick = () => toggleDetails(recordId);
+                tr.innerHTML = `
+                    <td><strong>${recordId}</strong></td>
+                    <td>${breakType.replace('_', ' ').toUpperCase()}</td>
+                    <td>${formattedAmount}</td>
+                    <td><span class="badge severity-${severity}">${severity}</span></td>
+                    <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
+                `;
+
+                const detailsTr = document.createElement('tr');
+                detailsTr.id = `details-${recordId}`;
+                detailsTr.className = 'details-row';
+                detailsTr.innerHTML = `
+                    <td colspan="5">
+                        <div class="details-content">
+                            <h4>Agent Audit Trail & Reasoning</h4>
+                            <p><strong>Intelligence Layer:</strong> ${agentSource}</p>
+                            <p><strong>Investigator Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'}</p>
+                            <p><strong>Model Confidence:</strong> ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%</p>
+                            <p><strong>Resolver Action:</strong> ${actionNarrative}</p>
+                        </div>
+                    </td>
+                `;
+
+                tbody.appendChild(tr);
+                tbody.appendChild(detailsTr);
+            });
         }
 
-        const numAmount = parseFloat(rawAmount);
-        const formattedAmount = isNaN(numAmount) ? '$0.00' : `$${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-        const severity = br.investigation?.severity || 'unknown';
-        const status = br.resolution?.status || 'processing';
-        const breakType = br.investigation?.break_type || br.break_type || 'unclassified';
-        const agentSource = br.investigation?.source || 'Gemini Flash-Lite';
-
-        let actionNarrative = br.resolution?.narrative || 'Pending agent action...';
-        if (status === 'escalated' && actionNarrative === 'Pending agent action...') {
-            if (br.resolution?.packet) {
-                actionNarrative = `Escalated to Operations queue (Confidence ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%).`;
-            }
-        }
-
-        const tr = document.createElement('tr');
-        tr.className = 'main-row';
-        tr.onclick = () => toggleDetails(recordId);
-        tr.innerHTML = `
-            <td><strong>${recordId}</strong></td>
-            <td>${breakType.replace('_', ' ').toUpperCase()}</td>
-            <td>${formattedAmount}</td>
-            <td><span class="badge severity-${severity}">${severity}</span></td>
-            <td><span class="badge status-${status}">${status.replace('_', ' ')}</span></td>
-        `;
-
-        const detailsTr = document.createElement('tr');
-        detailsTr.id = `details-${recordId}`;
-        detailsTr.className = 'details-row';
-        detailsTr.innerHTML = `
-            <td colspan="5">
-                <div class="details-content">
-                    <h4>Agent Audit Trail & Reasoning</h4>
-                    <p><strong>Intelligence Layer:</strong> ${agentSource}</p>
-                    <p><strong>Investigator Reasoning:</strong> ${br.investigation?.reasoning || 'No reasoning provided.'}</p>
-                    <p><strong>Model Confidence:</strong> ${((br.investigation?.confidence || 0) * 100).toFixed(0)}%</p>
-                    <p><strong>Resolver Action:</strong> ${actionNarrative}</p>
-                </div>
-            </td>
-        `;
-
-        tbody.appendChild(tr);
-        tbody.appendChild(detailsTr);
-    });
-}
         function toggleDetails(id) {
             const row = document.getElementById(`details-${id}`);
             if (row) row.classList.toggle('open');
