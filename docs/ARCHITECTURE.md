@@ -6,6 +6,7 @@ Breakwater is a multi-agent autonomous reconciliation system designed to process
 
 Data feeds (Ledger and Processor CSVs) are ingested via a dedicated file-upload FastAPI endpoint. To bypass serverless HTTP timeouts while handling massive scale, the system employs a **Parallelized ThreadPool Orchestrator** to manage the AI swarm asynchronously.
 
+```
 > Data feeds (Ledger CSV + Processor CSV)
 >        |
 >        v
@@ -29,7 +30,7 @@ Data feeds (Ledger and Processor CSVs) are ingested via a dedicated file-upload 
 >                   v
 >     Dashboard (Vanilla JS Polling) & Auditor CSV Export
 
-
+```
 ## Agent Swarm & Model Selection
 
 A core design principle of Breakwater is **Cost-Aware Routing**. We strictly avoid monolithic LLM calls, instead routing specific tasks to the most efficient capable model tier. We rely exclusively on Google Cloud Vertex AI Model-as-a-Service (MaaS) endpoints to maintain a true scale-to-zero footprint and avoid expensive dedicated GPU provisioning.
