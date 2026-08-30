@@ -29,6 +29,9 @@ def run(ledger_path: str, processor_path: str):
         suffixes=('_ledger', '_processor')
     )
 
+    # FIX: Convert Pandas NaN values to Python None for strict JSON compliance in FastAPI
+    merged = merged.where(pd.notna(merged), None)
+
     matched = merged[merged['_merge'] == 'both'].to_dict('records')
     unmatched_ledger = merged[merged['_merge'] == 'left_only'].to_dict('records')
     unmatched_processor = merged[merged['_merge'] == 'right_only'].to_dict('records')
