@@ -1,6 +1,7 @@
 import os
 import csv
 import time
+import math
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, BackgroundTasks, UploadFile, File
@@ -17,7 +18,17 @@ class OverrideRequest(BaseModel):
     transaction_id: str
     status: str
     narrative: str
-
+    
+def _clean_nans(obj):
+    """Recursively replaces float('nan') with None for JSON compliance."""
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
+    elif isinstance(obj, dict):
+        return {k: _clean_nans(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nans(i) for i in obj]
+    return obj
+    
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
     with open("dashboard/index.html", "r") as f:
@@ -29,7 +40,9 @@ async def get_dashboard_stats():
 
 @app.get("/breaks")
 async def get_dashboard_breaks():
-    return get_all_breaks()
+    breaks = get_all_breaks()
+    clean_breaks = _clean_nans(breaks)
+    return clean_breaks
 
 @app.post("/reset")
 async def reset_system():
