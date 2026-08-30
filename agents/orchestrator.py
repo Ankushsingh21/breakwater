@@ -25,23 +25,51 @@ pipeline = Workflow(
 
 def process_single_break(br):
     """Processes a single break through the full ADK agent pipeline."""
+    
     # A. Investigator Agent classifies the break (Includes True RAG context)
-    investigation = investigate(br)
+    try:
+        investigation = investigate(br)
+        # Fallback if Gemini somehow didn't return a dictionary
+        if not isinstance(investigation, dict):
+            investigation = {
+                "break_type": "unknown", 
+                "confidence": 0.0, 
+                "reasoning": "AI returned non-dictionary format.",
+                "source": "error_handler"
+            }
+    except Exception as e:
+        investigation = {
+            "break_type": "unknown", 
+            "confidence": 0.0, 
+            "reasoning": f"Investigation crashed: {e}",
+            "source": "error_handler"
+        }
+        
     br["investigation"] = investigation
     
-    # B. Parse exact variables required by the Gemma 4 MaaS Tagger
+    # B. Safely parse exact variables required by the Gemma 4 MaaS Tagger
     b_type = investigation.get("break_type", "unknown")
     amt = br.get("amount") or br.get("ledger", {}).get("amount") or 0
     conf = investigation.get("confidence", 0)
     
-    br["investigation"]["severity"] = tag_severity(b_type, amt, conf)
+    try:
+        br["investigation"]["severity"] = tag_severity(b_type, amt, conf)
+    except Exception:
+        br["investigation"]["severity"] = "high" # Safe fallback
     
     # C. Resolver Agent decides action
-    resolution = resolve(br, investigation)
+    try:
+        resolution = resolve(br, investigation)
+    except Exception as e:
+        resolution = {"status": "escalated", "break_type": b_type, "narrative": f"Resolver failed: {e}"}
+        
     br["resolution"] = resolution
     
     # D. Auditor Agent permanently logs the decision to Firestore
-    write_record(br)
+    try:
+        write_record(br)
+    except Exception as e:
+        print(f"[Orchestrator] DB Write Error: {e}")
     
-    print(f"[Orchestrator] Break processed and audited. Status: {resolution.get('status')}")
+    print(f"[Orchestrator] Break processed and audited. Status: {resolution.get('status', 'unknown')}")
     return br
