@@ -1,5 +1,6 @@
 """Matcher Agent - deterministic, no LLM. Uses Pandas to clear exact matches."""
 import pandas as pd
+import numpy as np
 
 def run(ledger_path: str, processor_path: str):
     try:
@@ -9,17 +10,14 @@ def run(ledger_path: str, processor_path: str):
         print(f"[Matcher] Error reading CSVs: {e}")
         return {"matched": [], "breaks": []}
 
-    # Standardize column names
     df_ledger.columns = [c.strip().lower() for c in df_ledger.columns]
     df_processor.columns = [c.strip().lower() for c in df_processor.columns]
 
-    # Ensure required columns exist
     req_cols = ['transaction_id', 'amount', 'currency']
     for col in req_cols:
-        if col not in df_ledger.columns: df_ledger[col] = None
-        if col not in df_processor.columns: df_processor[col] = None
+        if col not in df_ledger.columns: df_ledger[col] = ""
+        if col not in df_processor.columns: df_processor[col] = ""
 
-    # Exact Match on ID and Amount
     merged = pd.merge(
         df_ledger, 
         df_processor, 
@@ -29,8 +27,10 @@ def run(ledger_path: str, processor_path: str):
         suffixes=('_ledger', '_processor')
     )
 
-    # FIX: Convert Pandas NaN values to Python None for strict JSON compliance in FastAPI
-    merged = merged.where(pd.notna(merged), None)
+    # BULLETPROOF FIX: Convert every NaN/Null value to an empty string. 
+    # This guarantees 100% JSON compliance for FastAPI.
+    merged = merged.replace({np.nan: ""})
+    merged = merged.fillna("")
 
     matched = merged[merged['_merge'] == 'both'].to_dict('records')
     unmatched_ledger = merged[merged['_merge'] == 'left_only'].to_dict('records')
@@ -43,7 +43,7 @@ def run(ledger_path: str, processor_path: str):
             "transaction_id": row.get("transaction_id"),
             "amount": row.get("amount"),
             "ledger": row,
-            "processor": None,
+            "processor": {},
             "reason": "Missing in Processor"
         })
         
@@ -51,7 +51,7 @@ def run(ledger_path: str, processor_path: str):
         breaks.append({
             "transaction_id": row.get("transaction_id"),
             "amount": row.get("amount"),
-            "ledger": None,
+            "ledger": {},
             "processor": row,
             "reason": "Missing in Ledger"
         })
