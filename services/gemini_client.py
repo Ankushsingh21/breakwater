@@ -12,7 +12,7 @@ if PROJECT_ID:
         _client = genai.Client(
             vertexai=True,
             project=PROJECT_ID,
-            location="us"  # CHANGED from us-central1
+            location="us"
         )
         print(f"[gemini_client] Successfully initialized GenAI Vertex client for {PROJECT_ID}")
     except Exception as e:
@@ -25,8 +25,8 @@ Ledger record: {ledger}
 Processor record: {processor}
 Matcher flagged reason: {reason}
 
-Respond with ONLY valid JSON in this exact shape:
-{{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.8, "reasoning": "one sentence"}}
+Respond with ONLY valid JSON in this exact shape. Do NOT wrap it in markdown blockticks:
+{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.8, "reasoning": "one sentence"}
 """
 
 def classify_break(ledger, processor, reason):
@@ -44,12 +44,20 @@ def classify_break(ledger, processor, reason):
             model=GEMINI_MODEL,
             contents=prompt
         )
-        text = response.text.strip().strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
+        text = response.text.strip()
+        
+        # Robustly strip markdown fences often added by Gemini 3.5
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+            
+        text = text.strip()
         return json.loads(text)
     except Exception as e:
-        print(f"[gemini_client] API call failed, using fallback: {e}")
+        print(f"[gemini_client] API call failed, using fallback: {e}\nRaw output was: {response.text if 'response' in locals() else 'None'}")
         return _fallback_classify(reason)
 
 def _fallback_classify(reason):
