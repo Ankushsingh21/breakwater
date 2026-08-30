@@ -13,6 +13,7 @@
         .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-secondary { background: var(--surface); color: var(--primary); border: 1px solid var(--primary); }
+        .btn-danger { background: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
         .btn-hitl { background: #22c55e; color: white; padding: 0.4rem 0.8rem; margin-top: 0.5rem; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
         .upload-panel { background: var(--surface); padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 2rem; display: flex; gap: 1rem; align-items: flex-end; }
         .upload-group { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
@@ -23,12 +24,9 @@
         .stat-title { color: var(--text-muted); font-size: 0.875rem; font-weight: 600; text-transform: uppercase; }
         .stat-value { font-size: 2rem; font-weight: 700; margin-top: 0.5rem; }
         .chart-container { background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; display: flex; justify-content: center; align-items: center; }
-        
-        /* New Filter Controls */
         .table-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
         .table-controls h2 { font-size: 1.25rem; color: var(--text); }
         .table-controls select { padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-weight: 600; color: var(--text); background: var(--surface); cursor: pointer; outline: none; }
-        
         .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
         th, td { padding: 1rem; border-bottom: 1px solid var(--border); }
@@ -56,7 +54,11 @@
             <h1>Breakwater Enterprise</h1>
             <div id="live-indicator"><div class="dot"></div>AI Swarm Processing...</div>
         </div>
-        <button class="btn btn-secondary" onclick="window.location.href='/export'">Download Audit Report</button>
+        <div>
+            <!-- RESET BUTTON ADDED HERE -->
+            <button class="btn btn-danger" onclick="resetDemo()">Reset Data</button>
+            <button class="btn btn-secondary" onclick="window.location.href='/export'">Download Audit Report</button>
+        </div>
     </div>
 
     <div class="upload-panel">
@@ -75,7 +77,6 @@
         <div class="chart-container"><canvas id="resolutionChart" height="180"></canvas></div>
     </div>
 
-    <!-- Filter Controls Added Here -->
     <div class="table-controls">
         <h2>Agent Audit Trail</h2>
         <select id="status-filter" onchange="renderTable()">
@@ -93,10 +94,9 @@
         </table>
     </div>
 
-
-    <script>
+   <script>
         let pollInterval = null, targetBreaks = 0, chartInstance = null;
-        let currentBreaksData = []; // Store state globally to allow instant filtering
+        let currentBreaksData = [];
 
         function initChart() {
             const ctx = document.getElementById('resolutionChart').getContext('2d');
@@ -108,6 +108,14 @@
         }
         initChart();
 
+        // NEW: Reset Demo Function
+        async function resetDemo() {
+            if(confirm("Are you sure you want to clear the active workflow UI? (Immutable audit logs are retained)")) {
+                await fetch('/reset', { method: 'POST' });
+                location.reload(); // Refresh the page to reset all UI counters
+            }
+        }
+
         async function triggerReconciliation() {
             const f1 = document.getElementById('ledger-file').files[0], f2 = document.getElementById('processor-file').files[0];
             if (!f1 || !f2) return alert("Select both CSV files.");
@@ -116,7 +124,7 @@
             btn.disabled = true; btn.innerText = "Processing...";
             const fd = new FormData(); fd.append("ledger", f1); fd.append("processor", f2);
             document.getElementById('table-body').innerHTML = "";
-            document.getElementById('status-filter').value = "all"; // reset filter on new run
+            document.getElementById('status-filter').value = "all"; 
 
             try {
                 const res = await fetch('/upload_and_reconcile', { method: 'POST', body: fd });
@@ -140,15 +148,13 @@
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ transaction_id: id, status: 'manually_approved', narrative: 'Human reviewer approved resolution.' })
             });
-            fetchUpdates(); // Pull fresh data to reflect override
+            fetchUpdates(); 
         }
 
         async function fetchUpdates() {
             try {
                 const [sRes, bRes] = await Promise.all([fetch('/stats'), fetch('/breaks')]);
                 const stats = await sRes.json();
-                
-                // Save to global state and render
                 currentBreaksData = await bRes.json();
 
                 document.getElementById('stat-resolved').innerText = (stats.auto_resolved || 0).toLocaleString();
@@ -180,7 +186,6 @@
             const filterValue = document.getElementById('status-filter').value;
             tbody.innerHTML = '';
             
-            // Filter Data
             const filteredBreaks = currentBreaksData.filter(br => {
                 if (filterValue === 'all') return true;
                 const stat = br.resolution?.status || 'processing';
@@ -190,9 +195,14 @@
             filteredBreaks.forEach(br => {
                 const l = br.ledger || {}, p = br.processor || {};
                 const rId = br.transaction_id || getVal(l, 'transaction_id') || getVal(p, 'transaction_id') || 'N/A';
-                const amt = parseFloat(br.amount ?? getVal(l, 'amount') ?? getVal(p, 'amount') ?? 0);
+                
+                // Parse amount safely
+                const rawAmount = br.amount ?? getVal(l, 'amount') ?? getVal(p, 'amount') ?? 0;
+                const amt = parseFloat(rawAmount) || 0;
+                
                 const cur = getVal(l, 'currency') || getVal(p, 'currency') || 'USD';
                 const fAmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: cur }).format(amt);
+                
                 const sev = br.investigation?.severity || 'unknown', stat = br.resolution?.status || 'processing';
 
                 const tr = document.createElement('tr');
