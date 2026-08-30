@@ -1,53 +1,59 @@
-"""Matcher Agent - deterministic, no LLM. Matches ledger vs processor records."""
-import csv
-from collections import defaultdict
+"""Matcher Agent - deterministic, no LLM. Uses Pandas to clear exact matches."""
+import pandas as pd
 
-AMOUNT_TOLERANCE = 0.01
-
-def load_csv(path):
-    with open(path) as f:
-        return list(csv.DictReader(f))
-
-def run(ledger_path="data/ledger.csv", processor_path="data/processor.csv"):
+def run(ledger_path: str, processor_path: str):
     try:
-        ledger = load_csv(ledger_path)
-        processor = load_csv(processor_path)
+        df_ledger = pd.read_csv(ledger_path)
+        df_processor = pd.read_csv(processor_path)
     except Exception as e:
-        print(f"[Matcher] Error reading data: {e}")
-        return {"matched": [], "breaks": [], "total_ledger": 0, "total_processor": 0}
+        print(f"[Matcher] Error reading CSVs: {e}")
+        return {"matched": [], "breaks": []}
 
-    proc_by_id = defaultdict(list)
-    for row in processor:
-        proc_by_id[row["transaction_id"]].append(row)
+    # Standardize column names
+    df_ledger.columns = [c.strip().lower() for c in df_ledger.columns]
+    df_processor.columns = [c.strip().lower() for c in df_processor.columns]
 
-    matched, breaks = [], []
-    seen_ledger_ids = set()
+    # Ensure required columns exist
+    req_cols = ['transaction_id', 'amount', 'currency']
+    for col in req_cols:
+        if col not in df_ledger.columns: df_ledger[col] = None
+        if col not in df_processor.columns: df_processor[col] = None
 
-    for l in ledger:
-        seen_ledger_ids.add(l["transaction_id"])
-        candidates = proc_by_id.get(l["transaction_id"], [])
+    # Exact Match on ID and Amount
+    merged = pd.merge(
+        df_ledger, 
+        df_processor, 
+        on=['transaction_id', 'amount'], 
+        how='outer', 
+        indicator=True,
+        suffixes=('_ledger', '_processor')
+    )
 
-        if len(candidates) == 0:
-            breaks.append({"transaction_id": l["transaction_id"], "ledger": l, "processor": None, "reason": "no_processor_match"})
-            continue
-        if len(candidates) > 1:
-            breaks.append({"transaction_id": l["transaction_id"], "ledger": l, "processor": candidates, "reason": "multiple_processor_matches"})
-            continue
+    matched = merged[merged['_merge'] == 'both'].to_dict('records')
+    unmatched_ledger = merged[merged['_merge'] == 'left_only'].to_dict('records')
+    unmatched_processor = merged[merged['_merge'] == 'right_only'].to_dict('records')
 
-        p = candidates[0]
-        amount_diff = abs(float(l["amount"]) - float(p["amount"]))
-        if amount_diff > AMOUNT_TOLERANCE:
-            breaks.append({"transaction_id": l["transaction_id"], "ledger": l, "processor": p, "reason": "amount_mismatch", "amount_diff": amount_diff})
-            continue
-        if l["timestamp"] != p["timestamp"]:
-            breaks.append({"transaction_id": l["transaction_id"], "ledger": l, "processor": p, "reason": "timestamp_mismatch"})
-            continue
+    breaks = []
+    
+    for row in unmatched_ledger:
+        breaks.append({
+            "transaction_id": row.get("transaction_id"),
+            "amount": row.get("amount"),
+            "ledger": row,
+            "processor": None,
+            "reason": "Missing in Processor"
+        })
+        
+    for row in unmatched_processor:
+        breaks.append({
+            "transaction_id": row.get("transaction_id"),
+            "amount": row.get("amount"),
+            "ledger": None,
+            "processor": row,
+            "reason": "Missing in Ledger"
+        })
 
-        matched.append({"transaction_id": l["transaction_id"], "ledger": l, "processor": p})
-
-    for txn_id, rows in proc_by_id.items():
-        if txn_id not in seen_ledger_ids:
-            for p in rows:
-                breaks.append({"transaction_id": txn_id, "ledger": None, "processor": p, "reason": "processor_only"})
-
-    return {"matched": matched, "breaks": breaks, "total_ledger": len(ledger), "total_processor": len(processor)}
+    return {
+        "matched": matched,
+        "breaks": breaks
+    }
