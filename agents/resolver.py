@@ -1,7 +1,8 @@
 """Resolver Agent - autonomously fixes known-safe breaks, escalates the rest."""
 import os
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+# Updated to match hackathon requirements
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 _PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 
 _client = None
