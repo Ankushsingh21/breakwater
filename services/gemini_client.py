@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
@@ -8,6 +9,7 @@ _client = None
 if PROJECT_ID:
     try:
         from google import genai
+        from google.genai import types
         
         _client = genai.Client(
             vertexai=True,
@@ -25,8 +27,10 @@ Ledger record: {ledger}
 Processor record: {processor}
 Matcher flagged reason: {reason}
 
-Respond with ONLY valid JSON in this exact shape. Do NOT wrap it in markdown blockticks:
-{"break_type": "duplicate|timing_diff|currency_rounding|missing_entry|unknown", "confidence": 0.8, "reasoning": "one sentence"}
+Return ONLY a JSON object with EXACTLY these three keys:
+"break_type": strictly one of ["duplicate", "timing_diff", "currency_rounding", "missing_entry", "unknown"]
+"confidence": a float between 0.0 and 1.0
+"reasoning": a one sentence explanation string
 """
 
 def classify_break(ledger, processor, reason):
@@ -40,24 +44,28 @@ def classify_break(ledger, processor, reason):
     )
     
     try:
+        # Force strict JSON mode in Gemini 3.5
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.1 # Keep it highly deterministic
+        )
+        
         response = _client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=prompt
+            contents=prompt,
+            config=config
         )
+        
         text = response.text.strip()
         
-        # Robustly strip markdown fences often added by Gemini 3.5
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
+        # In case the model still sneaks in markdown fences despite strict JSON mode
+        text = re.sub(r'^```json\s*', '', text)
+        text = re.sub(r'^```\s*', '', text)
+        text = re.sub(r'\s*```$', '', text)
             
-        text = text.strip()
         return json.loads(text)
     except Exception as e:
-        print(f"[gemini_client] API call failed, using fallback: {e}\nRaw output was: {response.text if 'response' in locals() else 'None'}")
+        print(f"[gemini_client] API call failed: {e}\nRaw output was: {response.text if 'response' in locals() else 'None'}")
         return _fallback_classify(reason)
 
 def _fallback_classify(reason):
