@@ -19,6 +19,20 @@ def run(ledger_path: str, processor_path: str):
         if col not in df_ledger.columns: df_ledger[col] = ""
         if col not in df_processor.columns: df_processor[col] = ""
 
+    # Ensure amount is numeric for accurate summation
+    df_ledger['amount'] = pd.to_numeric(df_ledger['amount'], errors='coerce').fillna(0.0)
+    df_processor['amount'] = pd.to_numeric(df_processor['amount'], errors='coerce').fillna(0.0)
+
+    # ENTERPRISE FIX: Group by transaction_id and sum the amounts for any split transactions
+    # This prevents Cartesian row inflation while preserving 100% of the financial data
+    agg_ledger = {col: 'first' for col in df_ledger.columns if col != 'transaction_id'}
+    agg_ledger['amount'] = 'sum'
+    df_ledger = df_ledger.groupby('transaction_id', as_index=False).agg(agg_ledger)
+
+    agg_processor = {col: 'first' for col in df_processor.columns if col != 'transaction_id'}
+    agg_processor['amount'] = 'sum'
+    df_processor = df_processor.groupby('transaction_id', as_index=False).agg(agg_processor)
+
     # MERGE ONLY ON ID so we can compare amounts side-by-side
     merged = pd.merge(
         df_ledger, 
