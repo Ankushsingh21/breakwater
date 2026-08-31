@@ -94,6 +94,7 @@
         </table>
     </div>
 
+
    <script>
         let pollInterval = null, targetBreaks = 0, chartInstance = null;
         let currentBreaksData = [];
@@ -108,7 +109,6 @@
         }
         initChart();
 
-        // NEW: Reset Demo Function
         async function resetDemo() {
             if(confirm("Are you sure you want to clear the active workflow UI? (Immutable audit logs are retained)")) {
                 await fetch('/reset', { method: 'POST' });
@@ -211,9 +211,18 @@
                 tr.innerHTML = `<td><strong>${rId}</strong></td><td>${(br.investigation?.break_type || 'unknown').replace('_', ' ').toUpperCase()}</td><td>${fAmt}</td><td><span class="badge severity-${sev}">${sev}</span></td><td><span class="badge status-${stat}">${stat.replace('_', ' ')}</span></td>`;
 
                 const btnHTML = stat === 'escalated' ? `<button class="btn-hitl" onclick="overrideBreak('${rId}')">Approve Resolution (HITL Override)</button>` : '';
+                
+                const confVal = br.investigation?.confidence != null ? Math.round(br.investigation.confidence * (br.investigation.confidence <= 1 ? 100 : 1)) + '%' : 'N/A';
+                
                 const dTr = document.createElement('tr');
                 dTr.id = `det-${rId}`; dTr.className = 'details-row';
-                dTr.innerHTML = `<td colspan="5"><div class="details-content"><p><strong>Intelligence Layer:</strong> ${br.investigation?.source || 'Gemini'}</p><p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'N/A'}</p><p><strong>Resolver Action:</strong> ${br.resolution?.narrative || 'Pending'}</p>${btnHTML}</div></td>`;
+                dTr.innerHTML = `<td colspan="5"><div class="details-content">
+                    <p><strong>Intelligence Layer:</strong> ${br.investigation?.source || 'Gemini'}</p>
+                    <p><strong>Confidence Score:</strong> ${confVal}</p>
+                    <p><strong>Reasoning:</strong> ${br.investigation?.reasoning || 'N/A'}</p>
+                    <p><strong>Resolver Action:</strong> ${br.resolution?.narrative || 'Pending'}</p>
+                    ${btnHTML}
+                </div></td>`;
 
                 tbody.appendChild(tr); tbody.appendChild(dTr);
             });
